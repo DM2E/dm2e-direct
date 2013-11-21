@@ -1,0 +1,8 @@
+Run the jar: java -jar Ingestion.jar ingestion.properties
+
+ingestion.properties:
+ARCHIVE: Path to a ZIP-archive containing XML-files
+XMLFolder: Path to a folder containing one or more XML-files, either ARCHIVE or XMLFolder should not be set
+XSLT: Path to the XSLT file
+SPARQL_ENDPOINT: URI of the SPARQL endpoint, more concrete to the SPARQL-UPDATE
+GRAPH_NAME: The URI of the named graph in which the data should be inserted
