@@ -7,6 +7,7 @@ package eu.dm2e.direct;
 import eu.dm2e.grafeo.Grafeo;
 import eu.dm2e.grafeo.jena.GrafeoImpl;
 import net.lingala.zip4j.core.ZipFile;
+import net.sf.saxon.serialize.MessageEmitter;
 import org.apache.commons.cli.*;
 import org.apache.commons.io.IOUtils;
 import org.joda.time.DateTime;
@@ -14,6 +15,7 @@ import org.joda.time.DateTime;
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.core.Response;
+import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.stream.StreamResult;
@@ -24,8 +26,11 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 /**
+ * A direct ingestion tool to ingest XML data via an XSLT mapping
+ * into a triple store.
  *
- * @author domi
+ *
+ * @author Dominique Ritze, Kai Eckert
  */
 public class Ingestion {
 
@@ -37,7 +42,8 @@ public class Ingestion {
     String dataset;
     String base;
     String graphName;
-
+    FileWriter xslLog;
+    long fileCount = 0;
 
 
 
@@ -111,6 +117,7 @@ public class Ingestion {
     }
 
     public void ingest(CommandLine cmd, Properties properties) {
+        long start = System.currentTimeMillis();
         xslt = properties.getProperty("xslt");
         endpointUpdate = properties.getProperty("endpointUpdate");
         endpointSelect = properties.getProperty("endpointSelect");
@@ -118,27 +125,59 @@ public class Ingestion {
         dataset = properties.getProperty("dataset");
         base = properties.getProperty("base");
         graphName = base + provider.toLowerCase() + "/" + dataset.toLowerCase() + "/" + DateTime.now().getMillis();
+        try {
+            xslLog = new FileWriter(new File("xsl.log"), true);
+        } catch (IOException e) {
+            throw new RuntimeException("An exception occurred: " + e, e);
+        }
 
         System.out.println("Data will be ingested to dataset: " + graphName);
 
         xslt = prepareInput(xslt);
         xslt = grepRootStylesheet(xslt);
 
+        long setupTime = System.currentTimeMillis() - start;
+        start = System.currentTimeMillis();
+        System.out.println("Time for XSLT setup in sec: " + ((double)setupTime) / 1000);
+
         if (cmd.getArgs().length==0) {
             String input = properties.getProperty("input");
             input = prepareInput(input);
+            long args = System.currentTimeMillis() - start;
+            start = System.currentTimeMillis();
+            System.out.println("Time for default data setup in sec: " + ((double)args) / 1000);
             processFileOrFolder(input);
         }
 
+
         for (String input:cmd.getArgs()) {
+            long args = System.currentTimeMillis() - start;
+            start = System.currentTimeMillis();
+            System.out.println("Time for data setup in sec: " + ((double)args) / 1000);
+            input = prepareInput(input);
             processFileOrFolder(input);
         }
+        long end = System.currentTimeMillis() - start;
+        System.out.println("\nTime for transformation in sec: " + ((double)end) / 1000);
+
 
 
     }
 
+    protected void xslLog(String message) {
+        try {
+            xslLog.write(message);
+            xslLog.write("\n");
+        } catch (IOException e) {
+            throw new RuntimeException("An exception occurred: " + e, e);
+        }
+
+    }
 
     public void processFile(String input) {
+        xslLog("===============================");
+        xslLog("Date: " + new Date());
+        xslLog("File: " + input);
         File f = new File(input);
 
         StreamSource xslSource = new StreamSource(xslt);
@@ -161,9 +200,14 @@ public class Ingestion {
             throw new RuntimeException("An exception occurred: " + e, e);
         }
         TransformerFactory transFact = new net.sf.saxon.TransformerFactoryImpl();
+
         try {
-            transFact.newTransformer(
-                    new StreamSource(xslt)).transform(new StreamSource(f),
+            Transformer trans = transFact.newTransformer(
+                    new StreamSource(xslt));
+            MessageEmitter emitter = new MessageEmitter();
+            emitter.setWriter(xslLog);
+            ((net.sf.saxon.Controller)trans).setMessageEmitter(emitter);
+            trans.transform(new StreamSource(f),
                     new StreamResult(resultXML));
         } catch (TransformerException e) {
             System.out.println("XSLT: " + xslt);
@@ -180,6 +224,10 @@ public class Ingestion {
         Grafeo g = new GrafeoImpl(tmp);
         g.postToEndpoint(endpointUpdate, graphName);
         System.out.print(".");
+        fileCount++;
+        if (fileCount%50==0) {
+            System.out.println("   " + fileCount);
+        }
 
 
     }
@@ -229,18 +277,10 @@ public class Ingestion {
 
         }
 
-        Long start = System.currentTimeMillis();
-
-        //transform(xslt, folder, );
-        //writeToTS(outputFolder, "http://lelystad.informatik.uni-mannheim.de:3040/ds/update","http://data.dm2e.eu/data/dataset/onb/codices/1");
-
         Grafeo g = new GrafeoImpl();
         g.addTriple(graphName, "rdfs:comment", "XSLT: " + xslt + " Input: " + input + " Generated: " + new Date() + " by Kai");
         g.postToEndpoint(endpointUpdate, graphName);
 
-        long time = System.currentTimeMillis() - start;
-
-        System.out.println("\n time:" + time);
 
 
 
