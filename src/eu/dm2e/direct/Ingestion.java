@@ -21,6 +21,7 @@ import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import java.io.*;
+import java.net.URI;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -29,35 +30,40 @@ import java.util.regex.Pattern;
  * A direct ingestion tool to ingest XML data via an XSLT mapping
  * into a triple store.
  *
- *
  * @author Dominique Ritze, Kai Eckert
  */
+
 public class Ingestion {
+
+    public final static String TOOL_URI = "http://data.dm2e.eu/data/tools/dm2e-direct";
+    public final static String VERSION = "1.0";
 
 
     String xslt;
+    String originalXslt;
+    List<String> originalInputs = new ArrayList<String>();
     String endpointUpdate;
     String endpointSelect;
     String provider;
     String dataset;
     String base;
     String graphName;
+    String datasetURI;
+    String label;
     FileWriter xslLog;
     long fileCount = 0;
-
 
 
     public static void main(String args[]) {
 
 
-
         Options options = new Options();
-        options.addOption("c","config",true,"The direct configuration to be used.");
-        options.addOption("p","provider",true,"The provider ID that is used to create your URIs, e.g., mpiwg.");
-        options.addOption("d","dataset",true,"The dataset ID this is used to create your URIs, e.g., codices.");
-        options.addOption("l","label", true, "A label describing the ingested dataset.");
-        options.addOption("x","xslt", true, "The XSLT mapping (zipped, a folder or a file)");
-        options.addOption("h","help", false, "Show this help.");
+        options.addOption("c", "config", true, "The direct configuration to be used.");
+        options.addOption("p", "provider", true, "The provider ID that is used to create your URIs, e.g., mpiwg.");
+        options.addOption("d", "dataset", true, "The dataset ID this is used to create your URIs, e.g., codices.");
+        options.addOption("l", "label", true, "A label describing the ingested dataset.");
+        options.addOption("x", "xslt", true, "The XSLT mapping (zipped, a folder or a file)");
+        options.addOption("h", "help", false, "Show this help.");
 
         CommandLineParser clp = new BasicParser();
         CommandLine cmd = null;
@@ -92,17 +98,17 @@ public class Ingestion {
         if (cmd.hasOption("c")) {
             System.out.println("Loading custom configuration: " + cmd.getOptionValue("c"));
             try {
-                properties.load(new FileInputStream( cmd.getOptionValue("c")));
+                properties.load(new FileInputStream(cmd.getOptionValue("c")));
             } catch (IOException e) {
                 System.err.println("Error reading custom config: " + e.getMessage());
             }
         }
 
-        for (Option o:cmd.getOptions()) {
-            properties.put(o.getLongOpt(),o.getValue());
+        for (Option o : cmd.getOptions()) {
+            properties.put(o.getLongOpt(), o.getValue());
         }
 
-        if (cmd.getArgs().length==0 && properties.getProperty("input")==null) {
+        if (cmd.getArgs().length == 0 && properties.getProperty("input") == null) {
             System.out.println("No input files. Either add them to a config or pass as argument: ");
             HelpFormatter help = new HelpFormatter();
             help.printHelp("ingest", options);
@@ -112,25 +118,28 @@ public class Ingestion {
         System.out.println("Configuration used: ");
         properties.list(System.out);
 
-        new Ingestion().ingest(cmd,properties);
+        new Ingestion().ingest(cmd, properties);
 
     }
 
     public void ingest(CommandLine cmd, Properties properties) {
         long start = System.currentTimeMillis();
         xslt = properties.getProperty("xslt");
+        originalXslt = xslt;
         endpointUpdate = properties.getProperty("endpointUpdate");
         endpointSelect = properties.getProperty("endpointSelect");
         provider = properties.getProperty("provider");
         dataset = properties.getProperty("dataset");
         base = properties.getProperty("base");
-        graphName = base + provider.toLowerCase() + "/" + dataset.toLowerCase() + "/" + DateTime.now().getMillis();
+        label = properties.getProperty("label");
+        datasetURI = base + provider.toLowerCase() + "/" + dataset.toLowerCase();
+        graphName = datasetURI + "/" + DateTime.now().getMillis();
         try {
             xslLog = new FileWriter(new File("xsl.log"), true);
         } catch (IOException e) {
             throw new RuntimeException("An exception occurred: " + e, e);
         }
-
+        System.out.println("See xsl.log for messages from the XSLT process.");
         System.out.println("Data will be ingested to dataset: " + graphName);
 
         xslt = prepareInput(xslt);
@@ -138,28 +147,31 @@ public class Ingestion {
 
         long setupTime = System.currentTimeMillis() - start;
         start = System.currentTimeMillis();
-        System.out.println("Time for XSLT setup in sec: " + ((double)setupTime) / 1000);
+        System.out.println("Time for XSLT setup in sec: " + ((double) setupTime) / 1000);
 
-        if (cmd.getArgs().length==0) {
+        if (cmd.getArgs().length == 0) {
             String input = properties.getProperty("input");
+            originalInputs.add(input);
             input = prepareInput(input);
             long args = System.currentTimeMillis() - start;
             start = System.currentTimeMillis();
-            System.out.println("Time for default data setup in sec: " + ((double)args) / 1000);
+            System.out.println("No command line arguments, processing configured input.");
+            System.out.println("Time for default data setup in sec: " + ((double) args) / 1000);
             processFileOrFolder(input);
         }
 
 
-        for (String input:cmd.getArgs()) {
+        for (String input : cmd.getArgs()) {
             long args = System.currentTimeMillis() - start;
             start = System.currentTimeMillis();
-            System.out.println("Time for data setup in sec: " + ((double)args) / 1000);
+            System.out.println("Time for data setup in sec: " + ((double) args) / 1000);
+            System.out.println("Processing: " + input);
+            originalInputs.add(input);
             input = prepareInput(input);
             processFileOrFolder(input);
         }
         long end = System.currentTimeMillis() - start;
-        System.out.println("\nTime for transformation in sec: " + ((double)end) / 1000);
-
+        System.out.println("\nTime for transformation in sec: " + ((double) end) / 1000);
 
 
     }
@@ -206,7 +218,7 @@ public class Ingestion {
                     new StreamSource(xslt));
             MessageEmitter emitter = new MessageEmitter();
             emitter.setWriter(xslLog);
-            ((net.sf.saxon.Controller)trans).setMessageEmitter(emitter);
+            ((net.sf.saxon.Controller) trans).setMessageEmitter(emitter);
             trans.transform(new StreamSource(f),
                     new StreamResult(resultXML));
         } catch (TransformerException e) {
@@ -225,7 +237,7 @@ public class Ingestion {
         g.postToEndpoint(endpointUpdate, graphName);
         System.out.print(".");
         fileCount++;
-        if (fileCount%50==0) {
+        if (fileCount % 50 == 0) {
             System.out.println("   " + fileCount);
         }
 
@@ -236,9 +248,11 @@ public class Ingestion {
         List<String> res = new ArrayList<String>();
         File d = new File(dir);
         if (d.isDirectory()) {
-            for (File f:d.listFiles()) {
+            for (File f : d.listFiles()) {
                 if (f.isDirectory()) res.addAll(getFiles(f.toString()));
-                else {res.add(f.toString());}
+                else {
+                    res.add(f.toString());
+                }
             }
 
         } else {
@@ -248,8 +262,9 @@ public class Ingestion {
     }
 
     public String grepRootStylesheet(String zipdir) {
+        if (!new File(zipdir).isDirectory()) return zipdir;
         Pattern pattern = Pattern.compile("xsl:template match=\"/\"");
-        for (String file:getFiles(zipdir)) {
+        for (String file : getFiles(zipdir)) {
 
             Scanner scanner = null;
             try {
@@ -257,7 +272,7 @@ public class Ingestion {
             } catch (FileNotFoundException e) {
                 throw new RuntimeException("An exception occurred: " + e, e);
             }
-            if (scanner.findWithinHorizon(pattern,0)!=null) return file;
+            if (scanner.findWithinHorizon(pattern, 0) != null) return file;
         }
 
         return null;
@@ -271,18 +286,45 @@ public class Ingestion {
             return;
         }
         if (f.isDirectory()) {
-        for (String file : getFiles(f.toString())) {
-            processFile(file);
-        }
+            for (String file : getFiles(f.toString())) {
+                processFile(file);
+            }
 
         }
+
+        IngestionActivity activity = new IngestionActivity();
+        activity.setId(graphName + "/ingestion");
+        activity.setAgent(URI.create(TOOL_URI + "/" + VERSION));
+        if (originalXslt.startsWith("http") || originalXslt.startsWith("ftp")) {
+            activity.getInputs().add(URI.create(originalXslt));
+        } else {
+            activity.setXslt(new File(originalXslt).toURI());
+        }
+        for (String i:originalInputs) {
+            if (i.startsWith("http") || i.startsWith("ftp")) {
+                activity.getInputs().add(URI.create(i));
+            } else {
+                activity.getInputs().add(new File(i).toURI());
+            }
+
+        }
+
+
+        VersionedDatasetPojo ds = new VersionedDatasetPojo();
+        ds.setId(graphName);
+        ds.setLabel(label != null ? label : dataset);
+        ds.setComment("XSLT: " + xslt + " Input: " + input + " Generated: " + new Date() + " by DM2E Direct Ingestion.");
+        ds.setTimestamp(DateTime.now());
+        ds.setDatasetID(URI.create(datasetURI));
+        ds.findLatest(endpointSelect);
+        ds.setJobURI(URI.create(activity.getId()));
+
 
         Grafeo g = new GrafeoImpl();
-        g.addTriple(graphName, "rdfs:comment", "XSLT: " + xslt + " Input: " + input + " Generated: " + new Date() + " by Kai");
+        g.getObjectMapper().addObject(ds);
+        g.getObjectMapper().addObject(activity);
         g.postToEndpoint(endpointUpdate, graphName);
-
-
-
+        System.out.println("Provenance: " + g.getTerseTurtle());
 
     }
 
@@ -290,14 +332,15 @@ public class Ingestion {
         if (new File(input).isDirectory()) return input;
         if (input.startsWith("http") || input.startsWith("ftp")) {
             input = download(input);
-            try {
-                if (new ZipFile(input).isValidZipFile()) {
-                    input = unzip(input);
-                }
-            } catch (net.lingala.zip4j.exception.ZipException e) {
-                throw new RuntimeException("An exception occurred: " + e, e);
-            }
         }
+        try {
+            if (new ZipFile(input).isValidZipFile()) {
+                input = unzip(input);
+            }
+        } catch (net.lingala.zip4j.exception.ZipException e) {
+            throw new RuntimeException("An exception occurred: " + e, e);
+        }
+
         return input;
     }
 

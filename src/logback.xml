@@ -64,6 +64,7 @@
 
     <!-- <logger name="eu.dm2e.grafeo.gom" level="DEBUG" />        -->
     <logger name="eu.dm2e.grafeo" level="WARN" />
+    <logger name="eu.dm2e.direct" level="INFO" />
     <logger name="org.apache" level="WARN" />
     <logger name="org.eclipse" level="WARN" />
     <logger name="org.glassfish" level="WARN" />
