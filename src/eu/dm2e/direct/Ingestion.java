@@ -7,14 +7,11 @@ package eu.dm2e.direct;
 import eu.dm2e.grafeo.Grafeo;
 import eu.dm2e.grafeo.jena.GrafeoImpl;
 import net.lingala.zip4j.core.ZipFile;
+import net.sf.saxon.Controller;
 import net.sf.saxon.serialize.MessageEmitter;
 import org.apache.commons.cli.*;
-import org.apache.commons.io.IOUtils;
 import org.joda.time.DateTime;
 
-import javax.ws.rs.client.Client;
-import javax.ws.rs.client.ClientBuilder;
-import javax.ws.rs.core.Response;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
@@ -22,7 +19,6 @@ import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import java.io.*;
 import java.net.URI;
-import java.nio.file.Files;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -40,6 +36,7 @@ public class Ingestion {
 
 
     String xslt;
+    Properties xsltProps = new Properties();
     String originalXslt;
     List<String> originalInputs = new ArrayList<String>();
     String endpointUpdate;
@@ -52,6 +49,7 @@ public class Ingestion {
     String label;
     FileWriter xslLog;
     long fileCount = 0;
+    boolean useOAIPMH = false;
 
 
     public static void main(String args[]) {
@@ -63,6 +61,8 @@ public class Ingestion {
         options.addOption("d", "dataset", true, "The dataset ID this is used to create your URIs, e.g., codices.");
         options.addOption("l", "label", true, "A label describing the ingested dataset.");
         options.addOption("x", "xslt", true, "The XSLT mapping (zipped, a folder or a file)");
+        options.addOption("xp", "xslt-props", true, "The file containing properties passed to the XSLT process.");
+        options.addOption("pmh", "use-oai-pmh", true, "Set to true, if input is an OAI-PMH endpoint.");
         options.addOption("h", "help", false, "Show this help.");
 
         CommandLineParser clp = new BasicParser();
@@ -125,7 +125,18 @@ public class Ingestion {
     public void ingest(CommandLine cmd, Properties properties) {
         long start = System.currentTimeMillis();
         xslt = properties.getProperty("xslt");
+        if (properties.getProperty("xslt-props")!=null) {
+            try {
+                xsltProps.load(new FileInputStream(properties.getProperty("xslt-props")));
+            } catch (IOException e) {
+                throw new RuntimeException("An exception occurred: " + e, e);
+            }
+        }
         originalXslt = xslt;
+        if (properties.get("use-oai-pmh")!=null && properties.get("use-oai-pmh").equals("true")) {
+            System.out.println("Using OAI-PMH mode for ingestion.");
+            useOAIPMH = true;
+        }
         endpointUpdate = properties.getProperty("endpointUpdate");
         endpointSelect = properties.getProperty("endpointSelect");
         provider = properties.getProperty("provider");
@@ -219,6 +230,9 @@ public class Ingestion {
             MessageEmitter emitter = new MessageEmitter();
             emitter.setWriter(xslLog);
             ((net.sf.saxon.Controller) trans).setMessageEmitter(emitter);
+            for (String key:xsltProps.stringPropertyNames()) {
+                ((Controller) trans).setParameter(key, xsltProps.get(key));
+            }
             trans.transform(new StreamSource(f),
                     new StreamResult(resultXML));
         } catch (TransformerException e) {
@@ -244,27 +258,12 @@ public class Ingestion {
 
     }
 
-    public List<String> getFiles(String dir) {
-        List<String> res = new ArrayList<String>();
-        File d = new File(dir);
-        if (d.isDirectory()) {
-            for (File f : d.listFiles()) {
-                if (f.isDirectory()) res.addAll(getFiles(f.toString()));
-                else {
-                    res.add(f.toString());
-                }
-            }
 
-        } else {
-            res.add(d.toString());
-        }
-        return res;
-    }
 
     public String grepRootStylesheet(String zipdir) {
         if (!new File(zipdir).isDirectory()) return zipdir;
         Pattern pattern = Pattern.compile("xsl:template match=\"/\"");
-        for (String file : getFiles(zipdir)) {
+        for (String file : DataTool.getFiles(zipdir)) {
 
             Scanner scanner = null;
             try {
@@ -280,16 +279,25 @@ public class Ingestion {
     }
 
     public void processFileOrFolder(String input) {
-        File f = new File(input);
-        if (f.isFile()) {
-            processFile(input);
-            return;
-        }
-        if (f.isDirectory()) {
-            for (String file : getFiles(f.toString())) {
-                processFile(file);
+        if (!useOAIPMH) {
+            File f = new File(input);
+            if (f.isFile()) {
+                processFile(input);
+                return;
             }
+            if (f.isDirectory()) {
+                for (String file : DataTool.getFiles(f.toString())) {
+                    processFile(file);
+                }
 
+            }
+        } else {
+            PMHarvester harvester = new PMHarvester(input);
+            for (String id:harvester.getIdentifiers()) {
+                String target = harvester.getRecord(id);
+                target = DataTool.download(target);
+                processFile(target);
+            }
         }
 
         IngestionActivity activity = new IngestionActivity();
@@ -329,13 +337,14 @@ public class Ingestion {
     }
 
     public String prepareInput(String input) {
+        if (useOAIPMH) return input;
         if (new File(input).isDirectory()) return input;
         if (input.startsWith("http") || input.startsWith("ftp")) {
-            input = download(input);
+            input = DataTool.download(input);
         }
         try {
             if (new ZipFile(input).isValidZipFile()) {
-                input = unzip(input);
+                input = DataTool.unzip(input);
             }
         } catch (net.lingala.zip4j.exception.ZipException e) {
             throw new RuntimeException("An exception occurred: " + e, e);
@@ -344,56 +353,7 @@ public class Ingestion {
         return input;
     }
 
-    public String download(String input) {
-        Client client = ClientBuilder.newClient();
-        Response resp = client.target(input).request().get();
-        if (resp.getStatus() >= 400) {
-            System.err.println("Could not download: " + resp.readEntity(String.class));
-            return null;
-        }
-        java.nio.file.Path inputPath;
-        FileOutputStream input_fos;
-        try {
-            inputPath = Files.createTempFile("download_", ".tmp");
-        } catch (IOException e1) {
-            System.err.println("Could not create temp file: " + e1.getMessage());
-            return null;
-        }
 
-        try {
-            input_fos = new FileOutputStream(inputPath.toFile());
-        } catch (FileNotFoundException e1) {
-            System.err.println("Could not write to temp file: " + e1.getMessage());
-            return null;
-        }
-        try {
-            IOUtils.copy(resp.readEntity(InputStream.class), input_fos);
-        } catch (IOException e) {
-            System.err.println("Could not write to temp file: " + e.getMessage());
-            return null;
-        } finally {
-            IOUtils.closeQuietly(input_fos);
-        }
-        inputPath.toFile().deleteOnExit();
-        return inputPath.toString();
-    }
 
-    public String unzip(String input) {
-        java.nio.file.Path zipdir;
-        try {
-            zipdir = Files.createTempDirectory("unzip_");
-        } catch (IOException e) {
-            System.err.println("Could not write to temp dir: " + e.getMessage());
-            return null;
-        }
-        try {
-            ZipFile zipFile = new ZipFile(new File(input));
-            zipFile.extractAll(zipdir.toString());
-        } catch (net.lingala.zip4j.exception.ZipException e) {
-            System.err.println("Error during unzipping: " + e.getMessage());
-            return null;
-        }
-        zipdir.toFile().deleteOnExit();
-        return zipdir.toString();
-    }
+
 }
