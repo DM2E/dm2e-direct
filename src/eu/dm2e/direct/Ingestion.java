@@ -11,6 +11,8 @@ import net.sf.saxon.Controller;
 import net.sf.saxon.serialize.MessageEmitter;
 import org.apache.commons.cli.*;
 import org.joda.time.DateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerException;
@@ -34,6 +36,7 @@ public class Ingestion {
     public final static String TOOL_URI = "http://data.dm2e.eu/data/tools/dm2e-direct";
     public final static String VERSION = "1.0";
 
+    protected Logger log = LoggerFactory.getLogger(getClass().getName());
 
     String xslt;
     Properties xsltProps = new Properties();
@@ -163,7 +166,7 @@ public class Ingestion {
         if (cmd.getArgs().length == 0) {
             String input = properties.getProperty("input");
             originalInputs.add(input);
-            input = prepareInput(input);
+            input = useOAIPMH?input:prepareInput(input);
             long args = System.currentTimeMillis() - start;
             start = System.currentTimeMillis();
             System.out.println("No command line arguments, processing configured input.");
@@ -178,7 +181,7 @@ public class Ingestion {
             System.out.println("Time for data setup in sec: " + ((double) args) / 1000);
             System.out.println("Processing: " + input);
             originalInputs.add(input);
-            input = prepareInput(input);
+            input = useOAIPMH?input:prepareInput(input);
             processFileOrFolder(input);
         }
         long end = System.currentTimeMillis() - start;
@@ -198,6 +201,7 @@ public class Ingestion {
     }
 
     public void processFile(String input) {
+        try {
         xslLog("===============================");
         xslLog("Date: " + new Date());
         xslLog("File: " + input);
@@ -215,7 +219,7 @@ public class Ingestion {
         } catch (IOException e) {
             throw new RuntimeException("An exception occurred: " + e, e);
         }
-        //tmp.deleteOnExit();
+        tmp.deleteOnExit();
         FileWriter resultXML = null;
         try {
             resultXML = new FileWriter(tmp);
@@ -236,8 +240,8 @@ public class Ingestion {
             trans.transform(new StreamSource(f),
                     new StreamResult(resultXML));
         } catch (TransformerException e) {
-            System.out.println("XSLT: " + xslt);
-            System.out.println("File: " + f.toString());
+            log.error("XSLT: " + xslt);
+            log.error("File: " + f.toString());
 
             throw new RuntimeException("An exception occurred: " + e, e);
         }
@@ -253,6 +257,15 @@ public class Ingestion {
         fileCount++;
         if (fileCount % 50 == 0) {
             System.out.println("   " + fileCount);
+        }
+        } catch(Throwable t) {
+            System.out.print("x");
+            fileCount++;
+            if (fileCount % 50 == 0) {
+                System.out.println("   " + fileCount);
+            }
+            throw new RuntimeException(t);
+
         }
 
 
@@ -279,15 +292,27 @@ public class Ingestion {
     }
 
     public void processFileOrFolder(String input) {
+        List<String> errors = new ArrayList<String>();
         if (!useOAIPMH) {
             File f = new File(input);
             if (f.isFile()) {
-                processFile(input);
+                try {
+                    processFile(input);
+                } catch (Throwable t) {
+                    log.error("\n Ingestion Error: " + t.getMessage(), t);
+                    errors.add(input);
+                }
                 return;
             }
             if (f.isDirectory()) {
                 for (String file : DataTool.getFiles(f.toString())) {
-                    processFile(file);
+                    try {
+                        processFile(file);
+                    } catch (Throwable t) {
+                        log.error("\n Ingestion Error: " + t.getMessage(), t);
+                        errors.add(input);
+                    }
+
                 }
 
             }
@@ -296,7 +321,13 @@ public class Ingestion {
             for (String id:harvester.getIdentifiers()) {
                 String target = harvester.getRecord(id);
                 target = DataTool.download(target);
-                processFile(target);
+                try {
+                    processFile(target);
+                } catch (Throwable t) {
+                    log.error("\n Ingestion Error: " + t.getMessage(), t);
+                    errors.add(id);
+                }
+
             }
         }
 
@@ -332,12 +363,15 @@ public class Ingestion {
         g.getObjectMapper().addObject(ds);
         g.getObjectMapper().addObject(activity);
         g.postToEndpoint(endpointUpdate, graphName);
-        System.out.println("Provenance: " + g.getTerseTurtle());
+        log.info("Provenance: " + g.getTerseTurtle());
+        System.out.println("Inputs in error: ");
+        for (String err:errors) {
+            System.out.println(err);
+        }
 
     }
 
     public String prepareInput(String input) {
-        if (useOAIPMH) return input;
         if (new File(input).isDirectory()) return input;
         if (input.startsWith("http") || input.startsWith("ftp")) {
             input = DataTool.download(input);
