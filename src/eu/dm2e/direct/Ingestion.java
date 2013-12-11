@@ -48,11 +48,16 @@ public class Ingestion {
     String dataset;
     String base;
     String graphName;
+    String version;
     String datasetURI;
     String label;
     FileWriter xslLog;
+    List<String> include = new ArrayList<String>();
+    Set<String> exclude= new HashSet<String>();
+
     long fileCount = 0;
     boolean useOAIPMH = false;
+    boolean keepTemp = false;
 
 
     public static void main(String args[]) {
@@ -66,6 +71,9 @@ public class Ingestion {
         options.addOption("x", "xslt", true, "The XSLT mapping (zipped, a folder or a file)");
         options.addOption("xp", "xslt-props", true, "The file containing properties passed to the XSLT process.");
         options.addOption("pmh", "use-oai-pmh", true, "Set to true, if input is an OAI-PMH endpoint.");
+        options.addOption("i", "include", true, "comma-separated list of identifiers or files to be included");
+        options.addOption("e", "exclude", true, "comma-separated list of identifiers or files to be excluded");
+        options.addOption("kt", "keep-temporary", true, "Keep temporary files (in default temp directory) for debugging. ");
         options.addOption("h", "help", false, "Show this help.");
 
         CommandLineParser clp = new BasicParser();
@@ -140,6 +148,20 @@ public class Ingestion {
             System.out.println("Using OAI-PMH mode for ingestion.");
             useOAIPMH = true;
         }
+        if (properties.get("keep-temporary")!=null && properties.get("keep-temporary").equals("true")) {
+            System.out.println("Keeping temporary files. WARNING: Do not forget to delete them yourself.");
+            keepTemp = true;
+        }
+        if (properties.get("exclude")!=null) {
+            for (String s:properties.get("exclude").toString().split(",")) {
+                exclude.add(s);
+            }
+        }
+        if (properties.get("include")!=null) {
+            for (String s:properties.get("include").toString().split(",")) {
+                include.add(s);
+            }
+        }
         endpointUpdate = properties.getProperty("endpointUpdate");
         endpointSelect = properties.getProperty("endpointSelect");
         provider = properties.getProperty("provider");
@@ -147,7 +169,8 @@ public class Ingestion {
         base = properties.getProperty("base");
         label = properties.getProperty("label");
         datasetURI = base + provider.toLowerCase() + "/" + dataset.toLowerCase();
-        graphName = datasetURI + "/" + DateTime.now().getMillis();
+        version = "" + DateTime.now().getMillis();
+        graphName = datasetURI + "/" + version;
         try {
             xslLog = new FileWriter(new File("xsl.log"), true);
         } catch (IOException e) {
@@ -156,12 +179,14 @@ public class Ingestion {
         System.out.println("See xsl.log for messages from the XSLT process.");
         System.out.println("Data will be ingested to dataset: " + graphName);
 
-        xslt = prepareInput(xslt);
-        xslt = grepRootStylesheet(xslt);
+        if (xslt!=null) {
+            xslt = prepareInput(xslt);
+            xslt = grepRootStylesheet(xslt);
 
-        long setupTime = System.currentTimeMillis() - start;
+            long setupTime = System.currentTimeMillis() - start;
+            System.out.println("Time for XSLT setup in sec: " + ((double) setupTime) / 1000);
+        }
         start = System.currentTimeMillis();
-        System.out.println("Time for XSLT setup in sec: " + ((double) setupTime) / 1000);
 
         if (cmd.getArgs().length == 0) {
             String input = properties.getProperty("input");
@@ -205,21 +230,22 @@ public class Ingestion {
         xslLog("===============================");
         xslLog("Date: " + new Date());
         xslLog("File: " + input);
-        File f = new File(input);
 
-        StreamSource xslSource = new StreamSource(xslt);
+            File tmp = new File(input);
+        if (xslt!=null) {
+            File f = new File(input);
+            StreamSource xslSource = new StreamSource(xslt);
         xslSource.setSystemId(xslt);
 
         StreamSource xmlSource = new StreamSource(f);
         xmlSource.setSystemId(f);
 
-        File tmp = null;
         try {
             tmp = File.createTempFile("TRANS_", ".xml");
         } catch (IOException e) {
             throw new RuntimeException("An exception occurred: " + e, e);
         }
-        tmp.deleteOnExit();
+        if (!keepTemp) tmp.deleteOnExit();
         FileWriter resultXML = null;
         try {
             resultXML = new FileWriter(tmp);
@@ -250,6 +276,7 @@ public class Ingestion {
             resultXML.close();
         } catch (IOException e) {
             throw new RuntimeException("An exception occurred: " + e, e);
+        }
         }
         Grafeo g = new GrafeoImpl(tmp);
         g.postToEndpoint(endpointUpdate, graphName);
@@ -302,9 +329,8 @@ public class Ingestion {
                     log.error("\n Ingestion Error: " + t.getMessage(), t);
                     errors.add(input);
                 }
-                return;
             }
-            if (f.isDirectory()) {
+            else if (f.isDirectory()) {
                 for (String file : DataTool.getFiles(f.toString())) {
                     try {
                         processFile(file);
@@ -317,8 +343,11 @@ public class Ingestion {
 
             }
         } else {
+
             PMHarvester harvester = new PMHarvester(input);
-            for (String id:harvester.getIdentifiers()) {
+            List<String> todo = include.isEmpty()?harvester.getIdentifiers():include;
+            for (String id:todo) {
+                if (exclude.contains(id)) continue;
                 String target = harvester.getRecord(id);
                 target = DataTool.download(target);
                 try {
@@ -334,9 +363,9 @@ public class Ingestion {
         IngestionActivity activity = new IngestionActivity();
         activity.setId(graphName + "/ingestion");
         activity.setAgent(URI.create(TOOL_URI + "/" + VERSION));
-        if (originalXslt.startsWith("http") || originalXslt.startsWith("ftp")) {
+        if (originalXslt!=null && (originalXslt.startsWith("http") || originalXslt.startsWith("ftp"))) {
             activity.getInputs().add(URI.create(originalXslt));
-        } else {
+        } else if (originalXslt!=null) {
             activity.setXslt(new File(originalXslt).toURI());
         }
         for (String i:originalInputs) {
@@ -352,7 +381,7 @@ public class Ingestion {
         VersionedDatasetPojo ds = new VersionedDatasetPojo();
         ds.setId(graphName);
         ds.setLabel(label != null ? label : dataset);
-        ds.setComment("XSLT: " + xslt + " Input: " + input + " Generated: " + new Date() + " by DM2E Direct Ingestion.");
+        ds.setComment("XSLT: " + originalXslt + " Input: " + input + " Generated: " + new Date() + " by DM2E Direct Ingestion.");
         ds.setTimestamp(DateTime.now());
         ds.setDatasetID(URI.create(datasetURI));
         ds.findLatest(endpointSelect);
@@ -368,6 +397,8 @@ public class Ingestion {
         for (String err:errors) {
             System.out.println(err);
         }
+        System.out.println("Provenance written.");
+        System.out.println("Check result at: http://lelystad.informatik.uni-mannheim.de:3000/direct/html/ingested/dataset/" + provider + "/" + dataset + "/" + version );
 
     }
 
