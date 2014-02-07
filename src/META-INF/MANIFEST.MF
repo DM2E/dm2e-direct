@@ -1,5 +1,4 @@
 Manifest-Version: 1.0
-Class-Path: saxon9he.jar grafeo.jar saxon9-unpack.jar zip4j_1.3.1.jar 
- commons-cli-1.2.jar
+Class-Path: saxon9he.jar grafeo.jar saxon9-unpack.jar zip4j_1.3.1.jar commons-cli-1.2.jar slf4j-api-1.7.5.jar joda-time-2.1.jar jena-core-2.10.1.jar jena-arq-2.10.1.jar javax.ws.rs-api-2.0.jar xercesImpl-2.11.0.jar xml-apis-1.4.01.jar jena-iri-0.9.6.jar jsonld-java-0.2.jar jackson-core-2.2.1.jar jackson-databind-2.2.1.jar commons-beanutils-core-1.8.0.jar jcl-over-slf4j-1.6.4.jar gson-2.2.2.jar httpcore-4.2.2.jar httpclient-4.2.3.jar
 Main-Class: eu.dm2e.direct.Ingestion
 

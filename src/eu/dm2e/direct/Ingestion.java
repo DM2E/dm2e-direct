@@ -52,8 +52,9 @@ public class Ingestion {
     String datasetURI;
     String label;
     FileWriter xslLog;
+    FileWriter ingestionLog;
     List<String> include = new ArrayList<String>();
-    Set<String> exclude= new HashSet<String>();
+    Set<String> exclude = new HashSet<String>();
 
     long fileCount = 0;
     boolean useOAIPMH = false;
@@ -135,8 +136,15 @@ public class Ingestion {
 
     public void ingest(CommandLine cmd, Properties properties) {
         long start = System.currentTimeMillis();
+        try {
+            ingestionLog = new FileWriter(new File("ingestion.log"), true);
+            ingestionLog.write("New log file\n");
+            log("Check logging: ok");
+        } catch (IOException e) {
+            throw new RuntimeException("An exception occurred: " + e, e);
+        }
         xslt = properties.getProperty("xslt");
-        if (properties.getProperty("xslt-props")!=null) {
+        if (properties.getProperty("xslt-props") != null) {
             try {
                 xsltProps.load(new FileInputStream(properties.getProperty("xslt-props")));
             } catch (IOException e) {
@@ -144,21 +152,21 @@ public class Ingestion {
             }
         }
         originalXslt = xslt;
-        if (properties.get("use-oai-pmh")!=null && properties.get("use-oai-pmh").equals("true")) {
+        if (properties.get("use-oai-pmh") != null && properties.get("use-oai-pmh").equals("true")) {
             System.out.println("Using OAI-PMH mode for ingestion.");
             useOAIPMH = true;
         }
-        if (properties.get("keep-temporary")!=null && properties.get("keep-temporary").equals("true")) {
+        if (properties.get("keep-temporary") != null && properties.get("keep-temporary").equals("true")) {
             System.out.println("Keeping temporary files. WARNING: Do not forget to delete them yourself.");
             keepTemp = true;
         }
-        if (properties.get("exclude")!=null) {
-            for (String s:properties.get("exclude").toString().split(",")) {
+        if (properties.get("exclude") != null) {
+            for (String s : properties.get("exclude").toString().split(",")) {
                 exclude.add(s);
             }
         }
-        if (properties.get("include")!=null) {
-            for (String s:properties.get("include").toString().split(",")) {
+        if (properties.get("include") != null) {
+            for (String s : properties.get("include").toString().split(",")) {
                 include.add(s);
             }
         }
@@ -179,19 +187,23 @@ public class Ingestion {
         System.out.println("See xsl.log for messages from the XSLT process.");
         System.out.println("Data will be ingested to dataset: " + graphName);
 
-        if (xslt!=null) {
+        if (xslt != null) {
+            System.out.println("XSLT Stylesheet: " + xslt);
+
             xslt = prepareInput(xslt);
             xslt = grepRootStylesheet(xslt);
 
             long setupTime = System.currentTimeMillis() - start;
             System.out.println("Time for XSLT setup in sec: " + ((double) setupTime) / 1000);
+        } else {
+            System.out.println("No XSLT transformation configured.");
         }
         start = System.currentTimeMillis();
 
         if (cmd.getArgs().length == 0) {
             String input = properties.getProperty("input");
             originalInputs.add(input);
-            input = useOAIPMH?input:prepareInput(input);
+            input = useOAIPMH ? input : prepareInput(input);
             long args = System.currentTimeMillis() - start;
             start = System.currentTimeMillis();
             System.out.println("No command line arguments, processing configured input.");
@@ -206,7 +218,7 @@ public class Ingestion {
             System.out.println("Time for data setup in sec: " + ((double) args) / 1000);
             System.out.println("Processing: " + input);
             originalInputs.add(input);
-            input = useOAIPMH?input:prepareInput(input);
+            input = useOAIPMH ? input : prepareInput(input);
             processFileOrFolder(input);
         }
         long end = System.currentTimeMillis() - start;
@@ -225,67 +237,99 @@ public class Ingestion {
 
     }
 
+    protected void log(String message) {
+        try {
+            ingestionLog.write(new java.text.SimpleDateFormat("MM/dd hh:mm:ss").format(new Date()) + ": " + message);
+            ingestionLog.write("\n");
+            ingestionLog.flush();
+        } catch (IOException e) {
+            throw new RuntimeException("An exception occurred: " + e, e);
+        }
+
+    }
+
+    protected void log(Throwable t) {
+        try {
+            ingestionLog.write(new java.text.SimpleDateFormat("MM/dd hh:mm:ss").format(new Date()) + ": " + t.getMessage());
+            ingestionLog.flush();
+            t.printStackTrace(new PrintWriter(ingestionLog));
+            ingestionLog.flush();
+            ingestionLog.write("\n");
+            ingestionLog.flush();
+        } catch (IOException e) {
+            throw new RuntimeException("An exception occurred: " + e, e);
+        }
+
+    }
+
+
     public void processFile(String input) {
         try {
-        xslLog("===============================");
-        xslLog("Date: " + new Date());
-        xslLog("File: " + input);
+            xslLog("===============================");
+            xslLog("Date: " + new Date());
+            xslLog("File: " + input);
 
             File tmp = new File(input);
-        if (xslt!=null) {
-            File f = new File(input);
-            StreamSource xslSource = new StreamSource(xslt);
-        xslSource.setSystemId(xslt);
+            if (xslt != null) {
+                File f = new File(input);
+                StreamSource xslSource = new StreamSource(xslt);
+                xslSource.setSystemId(xslt);
 
-        StreamSource xmlSource = new StreamSource(f);
-        xmlSource.setSystemId(f);
+                StreamSource xmlSource = new StreamSource(f);
+                xmlSource.setSystemId(f);
 
-        try {
-            tmp = File.createTempFile("TRANS_", ".xml");
-        } catch (IOException e) {
-            throw new RuntimeException("An exception occurred: " + e, e);
-        }
-        if (!keepTemp) tmp.deleteOnExit();
-        FileWriter resultXML = null;
-        try {
-            resultXML = new FileWriter(tmp);
-        } catch (IOException e) {
-            throw new RuntimeException("An exception occurred: " + e, e);
-        }
-        TransformerFactory transFact = new net.sf.saxon.TransformerFactoryImpl();
+                try {
+                    tmp = File.createTempFile("TRANS_", ".xml");
+                } catch (IOException e) {
+                    log(e.getMessage());
+                    throw new RuntimeException("An exception occurred: " + e, e);
+                }
+                if (!keepTemp) tmp.deleteOnExit();
+                FileWriter resultXML = null;
+                try {
+                    resultXML = new FileWriter(tmp);
+                } catch (IOException e) {
+                    log(e.getMessage());
+                    throw new RuntimeException("An exception occurred: " + e, e);
+                }
+                TransformerFactory transFact = new net.sf.saxon.TransformerFactoryImpl();
 
-        try {
-            Transformer trans = transFact.newTransformer(
-                    new StreamSource(xslt));
-            MessageEmitter emitter = new MessageEmitter();
-            emitter.setWriter(xslLog);
-            ((net.sf.saxon.Controller) trans).setMessageEmitter(emitter);
-            for (String key:xsltProps.stringPropertyNames()) {
-                ((Controller) trans).setParameter(key, xsltProps.get(key));
+                try {
+                    Transformer trans = transFact.newTransformer(
+                            new StreamSource(xslt));
+                    MessageEmitter emitter = new MessageEmitter();
+                    emitter.setWriter(xslLog);
+                    ((net.sf.saxon.Controller) trans).setMessageEmitter(emitter);
+                    for (String key : xsltProps.stringPropertyNames()) {
+                        ((Controller) trans).setParameter(key, xsltProps.get(key));
+                    }
+                    trans.transform(new StreamSource(f),
+                            new StreamResult(resultXML));
+                } catch (TransformerException e) {
+                    log.error("XSLT: " + xslt);
+                    log.error("File: " + f.toString());
+
+                    log(e.getMessage());
+                    throw new RuntimeException("An exception occurred: " + e, e);
+                }
+                try {
+                    resultXML.flush();
+                    resultXML.close();
+                } catch (IOException e) {
+                    log(e.getMessage());
+                    throw new RuntimeException("An exception occurred: " + e, e);
+
+                }
             }
-            trans.transform(new StreamSource(f),
-                    new StreamResult(resultXML));
-        } catch (TransformerException e) {
-            log.error("XSLT: " + xslt);
-            log.error("File: " + f.toString());
-
-            throw new RuntimeException("An exception occurred: " + e, e);
-        }
-        try {
-            resultXML.flush();
-            resultXML.close();
-        } catch (IOException e) {
-            throw new RuntimeException("An exception occurred: " + e, e);
-        }
-        }
-        Grafeo g = new GrafeoImpl(tmp);
-        g.postToEndpoint(endpointUpdate, graphName);
-        System.out.print(".");
-        fileCount++;
-        if (fileCount % 50 == 0) {
-            System.out.println("   " + fileCount);
-        }
-        } catch(Throwable t) {
+            Grafeo g = new GrafeoImpl(tmp);
+            g.postToEndpoint(endpointUpdate, graphName);
+            System.out.print(".");
+            fileCount++;
+            if (fileCount % 50 == 0) {
+                System.out.println("   " + fileCount);
+            }
+        } catch (Throwable t) {
+            log(t);
             System.out.print("x");
             fileCount++;
             if (fileCount % 50 == 0) {
@@ -297,7 +341,6 @@ public class Ingestion {
 
 
     }
-
 
 
     public String grepRootStylesheet(String zipdir) {
@@ -319,56 +362,16 @@ public class Ingestion {
     }
 
     public void processFileOrFolder(String input) {
-        List<String> errors = new ArrayList<String>();
-        if (!useOAIPMH) {
-            File f = new File(input);
-            if (f.isFile()) {
-                try {
-                    processFile(input);
-                } catch (Throwable t) {
-                    log.error("\n Ingestion Error: " + t.getMessage(), t);
-                    errors.add(input);
-                }
-            }
-            else if (f.isDirectory()) {
-                for (String file : DataTool.getFiles(f.toString())) {
-                    try {
-                        processFile(file);
-                    } catch (Throwable t) {
-                        log.error("\n Ingestion Error: " + t.getMessage(), t);
-                        errors.add(input);
-                    }
-
-                }
-
-            }
-        } else {
-
-            PMHarvester harvester = new PMHarvester(input);
-            List<String> todo = include.isEmpty()?harvester.getIdentifiers():include;
-            for (String id:todo) {
-                if (exclude.contains(id)) continue;
-                String target = harvester.getRecord(id);
-                target = DataTool.download(target);
-                try {
-                    processFile(target);
-                } catch (Throwable t) {
-                    log.error("\n Ingestion Error: " + t.getMessage(), t);
-                    errors.add(id);
-                }
-
-            }
-        }
 
         IngestionActivity activity = new IngestionActivity();
         activity.setId(graphName + "/ingestion");
         activity.setAgent(URI.create(TOOL_URI + "/" + VERSION));
-        if (originalXslt!=null && (originalXslt.startsWith("http") || originalXslt.startsWith("ftp"))) {
+        if (originalXslt != null && (originalXslt.startsWith("http") || originalXslt.startsWith("ftp"))) {
             activity.getInputs().add(URI.create(originalXslt));
-        } else if (originalXslt!=null) {
+        } else if (originalXslt != null) {
             activity.setXslt(new File(originalXslt).toURI());
         }
-        for (String i:originalInputs) {
+        for (String i : originalInputs) {
             if (i.startsWith("http") || i.startsWith("ftp")) {
                 activity.getInputs().add(URI.create(i));
             } else {
@@ -393,12 +396,56 @@ public class Ingestion {
         g.getObjectMapper().addObject(activity);
         g.postToEndpoint(endpointUpdate, graphName);
         log.info("Provenance: " + g.getTerseTurtle());
+        System.out.println("Provenance written.");
+        System.out.println("Check result at: http://lelystad.informatik.uni-mannheim.de:3000/direct/html/dataset/" + provider + "/" + dataset + "/" + version);
+
+        List<String> errors = new ArrayList<String>();
+        if (!useOAIPMH) {
+            File f = new File(input);
+            if (f.isFile()) {
+                try {
+                    processFile(input);
+                } catch (Throwable t) {
+                    log(t);
+                    log.error("\n Ingestion Error: " + t.getMessage(), t);
+                    errors.add(input);
+                }
+            } else if (f.isDirectory()) {
+                for (String file : DataTool.getFiles(f.toString())) {
+                    try {
+                        processFile(file);
+                    } catch (Throwable t) {
+                        log(t);
+                        log.error("\n Ingestion Error: " + t.getMessage(), t);
+                        errors.add(input);
+                    }
+
+                }
+
+            }
+        } else {
+
+            PMHarvester harvester = new PMHarvester(input);
+            List<String> todo = include.isEmpty() ? harvester.getIdentifiers() : include;
+            for (String id : todo) {
+                if (exclude.contains(id)) continue;
+                String target = harvester.getRecord(id);
+                target = DataTool.download(target);
+                try {
+                    processFile(target);
+                } catch (Throwable t) {
+                    log.error("\n Ingestion Error: " + t.getMessage(), t);
+                    log(t);
+                    errors.add(id);
+                }
+
+            }
+        }
         System.out.println("Inputs in error: ");
-        for (String err:errors) {
+        for (String err : errors) {
             System.out.println(err);
         }
-        System.out.println("Provenance written.");
-        System.out.println("Check result at: http://lelystad.informatik.uni-mannheim.de:3000/direct/html/ingested/dataset/" + provider + "/" + dataset + "/" + version );
+
 
     }
 
@@ -417,8 +464,6 @@ public class Ingestion {
 
         return input;
     }
-
-
 
 
 }
