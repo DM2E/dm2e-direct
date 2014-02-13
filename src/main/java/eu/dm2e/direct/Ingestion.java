@@ -6,6 +6,7 @@ package eu.dm2e.direct;
 
 import eu.dm2e.grafeo.Grafeo;
 import eu.dm2e.grafeo.jena.GrafeoImpl;
+import eu.dm2e.validation.Dm2eValidator;
 import eu.dm2e.validation.validator.Dm2eSpecificationVersion;
 import net.lingala.zip4j.core.ZipFile;
 import net.sf.saxon.Controller;
@@ -172,14 +173,29 @@ public class Ingestion {
                 include.add(s);
             }
         }
-        if (properties.get("dm2e-model-version") == null) {
-        	log("dm2e-model-version is not set!", System.err);
+		if (properties.get("dm2e-model-version") == null) {
+			final String msg = "dm2e-model-version is not set!";
+        	log(msg, System.err);
         	log("Supported versions:", System.err);
         	for (Dm2eSpecificationVersion thisVersion : Dm2eSpecificationVersion.values()) {
         		log("  * " + thisVersion.getVersionString(), System.err);
         	}
-        	return;
+        	throw new RuntimeException(msg);
         }
+
+        Dm2eValidator validator;
+        final String dm2eModelVersion = properties.getProperty("dm2e-model-version");
+        try {
+			validator = Dm2eSpecificationVersion.forString(dm2eModelVersion).getValidator();
+		} catch (NoSuchFieldException e1) {
+        	final String msg = "Unsupported 'dm2e-model-version': " + dm2eModelVersion;
+			log(msg, System.err);
+        	log("Supported versions:", System.err);
+        	for (Dm2eSpecificationVersion thisVersion : Dm2eSpecificationVersion.values()) {
+        		log("  * " + thisVersion.getVersionString(), System.err);
+        	}
+        	throw new RuntimeException(msg);
+		}
         endpointUpdate = properties.getProperty("endpointUpdate");
         endpointSelect = properties.getProperty("endpointSelect");
         provider = properties.getProperty("provider");
