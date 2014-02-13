@@ -6,9 +6,11 @@ package eu.dm2e.direct;
 
 import eu.dm2e.grafeo.Grafeo;
 import eu.dm2e.grafeo.jena.GrafeoImpl;
+import eu.dm2e.validation.validator.Dm2eSpecificationVersion;
 import net.lingala.zip4j.core.ZipFile;
 import net.sf.saxon.Controller;
 import net.sf.saxon.serialize.MessageEmitter;
+
 import org.apache.commons.cli.*;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
@@ -19,6 +21,7 @@ import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
+
 import java.io.*;
 import java.net.URI;
 import java.util.*;
@@ -51,6 +54,7 @@ public class Ingestion {
     String version;
     String datasetURI;
     String label;
+    String specVersion;
     FileWriter xslLog;
     FileWriter ingestionLog;
     List<String> include = new ArrayList<String>();
@@ -93,12 +97,10 @@ public class Ingestion {
             HelpFormatter help = new HelpFormatter();
             help.printHelp("ingest", options);
             return;
-
         }
 
-
         Properties properties = new Properties();
-        File defaultConfig = new File("default.properties");
+        File defaultConfig = new File(Ingestion.class.getResource("/default.properties").getFile());
         if (defaultConfig.exists()) {
             System.out.println("Loading default configuration: default.properties");
             try {
@@ -169,6 +171,14 @@ public class Ingestion {
             for (String s : properties.get("include").toString().split(",")) {
                 include.add(s);
             }
+        }
+        if (properties.get("dm2e-model-version") == null) {
+        	log("dm2e-model-version is not set!", System.err);
+        	log("Supported versions:", System.err);
+        	for (Dm2eSpecificationVersion thisVersion : Dm2eSpecificationVersion.values()) {
+        		log("  * " + thisVersion.getVersionString(), System.err);
+        	}
+        	return;
         }
         endpointUpdate = properties.getProperty("endpointUpdate");
         endpointSelect = properties.getProperty("endpointSelect");
@@ -254,6 +264,15 @@ public class Ingestion {
             throw new RuntimeException("An exception occurred: " + e, e);
         }
 
+    }
+    /**
+     * Logs to the ingestion log and the given print stream (such aus System.out or System.err)
+     * @param message the message
+     * @param out the print stream to write to
+     */
+    protected void log(String message, PrintStream out) {
+    	log(message);
+    	out.println(message);
     }
 
 	/**
