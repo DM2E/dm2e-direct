@@ -32,7 +32,7 @@ public class Namespaces implements NamespaceContext {
     }
 
     @Override
-    public Iterator getPrefixes(String s) {
+    public Iterator<String> getPrefixes(String s) {
         return namespaces.keySet().iterator();
     }
 }

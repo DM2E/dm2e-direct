@@ -1,26 +1,28 @@
 package eu.dm2e.direct;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+//import java.util.Date;
+
+import org.joda.time.DateTime;
+
 import com.hp.hpl.jena.query.ResultSet;
+
+import eu.dm2e.NS;
 import eu.dm2e.grafeo.annotations.Namespaces;
 import eu.dm2e.grafeo.annotations.RDFClass;
 import eu.dm2e.grafeo.annotations.RDFProperty;
 import eu.dm2e.grafeo.gom.SerializablePojo;
 import eu.dm2e.grafeo.jena.SparqlSelect;
-import org.joda.time.DateTime;
-
-import java.net.URI;
-import java.net.URISyntaxException;
-//import java.util.Date;
 
 /**
  * Pojo representing a Versioned Dataset.
  */
-@Namespaces({"omnom", "http://onto.dm2e.eu/omnom/",
-        "dc", "http://purl.org/dc/elements/1.1/",
-        "rdfs", "http://www.w3.org/2000/01/rdf-schema#",
-        "prov", "http://www.w3.org/ns/prov#",
-        "void", "http://rdfs.org/ns/void#",
-        "dm2e", "http://onto.dm2e.eu/schemas/dm2e/1.0/"})
+@Namespaces({"omnom", NS.OMNOM.BASE,
+        "dc", NS.DC.BASE,
+        "rdfs", NS.RDFS.BASE,
+        "prov", NS.PROV.BASE,
+        "void", NS.VOID.BASE})
 @RDFClass("void:Dataset")
 public class VersionedDatasetPojo extends SerializablePojo<VersionedDatasetPojo> {
 

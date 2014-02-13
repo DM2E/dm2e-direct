@@ -17,12 +17,12 @@ import java.util.List;
 public class PMHarvester {
 
     private String endpoint;
-    private String getRecord;
+//    private String getRecord;
     protected Logger log = LoggerFactory.getLogger(getClass().getName());
 
     public PMHarvester(String endpoint) {
         this.endpoint = endpoint;
-        this.getRecord = endpoint + "?verb=GetRecord&metadataPrefix=cmdi&identifier=";
+//        this.getRecord = endpoint + "?verb=GetRecord&metadataPrefix=cmdi&identifier=";
 
     }
 

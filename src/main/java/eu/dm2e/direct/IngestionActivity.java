@@ -3,6 +3,7 @@ package eu.dm2e.direct;
 import eu.dm2e.grafeo.annotations.RDFClass;
 import eu.dm2e.grafeo.annotations.RDFProperty;
 import eu.dm2e.grafeo.gom.SerializablePojo;
+import eu.dm2e.NS;
 
 import java.net.URI;
 import java.util.HashSet;
