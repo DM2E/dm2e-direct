@@ -6,7 +6,10 @@ package eu.dm2e.direct;
 
 import eu.dm2e.grafeo.Grafeo;
 import eu.dm2e.grafeo.jena.GrafeoImpl;
+import eu.dm2e.validation.Dm2eValidationReport;
 import eu.dm2e.validation.Dm2eValidator;
+import eu.dm2e.validation.ValidationException;
+import eu.dm2e.validation.ValidationLevel;
 import eu.dm2e.validation.validator.Dm2eSpecificationVersion;
 import net.lingala.zip4j.core.ZipFile;
 import net.sf.saxon.Controller;
@@ -55,7 +58,7 @@ public class Ingestion {
     String version;
     String datasetURI;
     String label;
-    String specVersion;
+	Dm2eValidator validator;
     FileWriter xslLog;
     FileWriter ingestionLog;
     List<String> include = new ArrayList<String>();
@@ -183,7 +186,6 @@ public class Ingestion {
         	throw new RuntimeException(msg);
         }
 
-        Dm2eValidator validator;
         final String dm2eModelVersion = properties.getProperty("dm2e-model-version");
         try {
 			validator = Dm2eSpecificationVersion.forString(dm2eModelVersion).getValidator();
@@ -310,7 +312,7 @@ public class Ingestion {
     }
 
 
-    public void processFile(String input) {
+    public void processFile(String input) throws ValidationException {
         try {
             xslLog("===============================");
             xslLog("Date: " + new Date());
@@ -368,13 +370,25 @@ public class Ingestion {
 
                 }
             }
-            Grafeo g = new GrafeoImpl(tmp);
-            g.postToEndpoint(endpointUpdate, graphName);
+            GrafeoImpl g = new GrafeoImpl(tmp);
+            //
+            // Validation!
+            //
+            Dm2eValidationReport validationReport = validator.validateWithDm2e(g.getModel());
+            if (! validationReport.containsErrors()) {
+            	log("Output validated. Yay :)");
+            	g.postToEndpoint(endpointUpdate, graphName);
+            } else {
+            	log(validationReport.exportToString(ValidationLevel.ERROR, false, false));
+            	throw new ValidationException(validationReport);
+            }
             System.out.print(".");
             fileCount++;
             if (fileCount % 50 == 0) {
                 System.out.println("   " + fileCount);
             }
+        } catch (ValidationException e) {
+        	throw e;
         } catch (Throwable t) {
             log(t);
             System.out.print("x");
@@ -383,10 +397,7 @@ public class Ingestion {
                 System.out.println("   " + fileCount);
             }
             throw new RuntimeException(t);
-
         }
-
-
     }
 
 
@@ -453,18 +464,18 @@ public class Ingestion {
         Grafeo g = new GrafeoImpl();
         g.getObjectMapper().addObject(ds);
         g.getObjectMapper().addObject(activity);
-        g.postToEndpoint(endpointUpdate, graphName);
-        log.info("Provenance: " + g.getTerseTurtle());
-        System.out.println("Provenance written.");
-        System.out.println("Check result at: http://lelystad.informatik.uni-mannheim.de:3000/direct/html/dataset/" + provider + "/" + dataset + "/" + version);
 
         List<String> errors = new ArrayList<String>();
+        ValidationException validationException = null;
         if (!useOAIPMH) {
             File f = new File(input);
             if (f.isFile()) {
                 try {
                     processFile(input);
-                } catch (Throwable t) {
+                } catch (ValidationException e) {
+                	validationException = e;
+                	errors.add(input);
+                } catch (RuntimeException t) {
                     log(t);
                     log.error("\n Ingestion Error: " + t.getMessage(), t);
                     errors.add(input);
@@ -473,7 +484,11 @@ public class Ingestion {
                 for (String file : DataTool.getFiles(f.toString())) {
                     try {
                         processFile(file);
-                    } catch (Throwable t) {
+                    } catch (ValidationException e) {
+                    	validationException = e;
+                    	errors.add(file);
+                    	break;
+                    } catch (RuntimeException t) {
                         log(t);
                         log.error("\n Ingestion Error: " + t.getMessage(), t);
                         errors.add(input);
@@ -483,7 +498,6 @@ public class Ingestion {
 
             }
         } else {
-
             PMHarvester harvester = new PMHarvester(input);
             List<String> todo = include.isEmpty() ? harvester.getIdentifiers() : include;
             for (String id : todo) {
@@ -492,7 +506,11 @@ public class Ingestion {
                 target = DataTool.download(target);
                 try {
                     processFile(target);
-                } catch (Throwable t) {
+                } catch (ValidationException e) {
+                	validationException = e;
+                    errors.add(id);
+                	break;
+                } catch (RuntimeException t) {
                     log.error("\n Ingestion Error: " + t.getMessage(), t);
                     log(t);
                     errors.add(id);
@@ -503,6 +521,15 @@ public class Ingestion {
         System.out.println("Inputs in error: ");
         for (String err : errors) {
             System.out.println(err);
+        }
+        if (null == validationException) {
+        	g.postToEndpoint(endpointUpdate, graphName);
+        	log.info("Provenance: " + g.getTerseTurtle());
+        	System.out.println("Provenance written.");
+        	System.out.println("Check result at: http://lelystad.informatik.uni-mannheim.de:3000/direct/html/dataset/" + provider + "/" + dataset + "/" + version);
+        } else {
+        	log("Validation Errrors occured, NOT INGESTED.", System.out);
+        	log(validationException.getReport().exportToString(ValidationLevel.ERROR, false, true), System.out);
         }
 
 
