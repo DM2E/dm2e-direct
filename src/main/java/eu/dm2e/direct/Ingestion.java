@@ -227,6 +227,10 @@ public class Ingestion {
 
     }
 
+	/**
+	 * Logs to the XSL transformation log
+	 * @param message
+	 */
     protected void xslLog(String message) {
         try {
             xslLog.write(message);
@@ -237,6 +241,10 @@ public class Ingestion {
 
     }
 
+	/**
+	 * Logs to the ingestion log
+	 * @param message
+	 */
     protected void log(String message) {
         try {
             ingestionLog.write(new java.text.SimpleDateFormat("MM/dd hh:mm:ss").format(new Date()) + ": " + message);
@@ -248,6 +256,10 @@ public class Ingestion {
 
     }
 
+	/**
+	 * Logs to the ingestion log
+	 * @param t
+	 */
     protected void log(Throwable t) {
         try {
             ingestionLog.write(new java.text.SimpleDateFormat("MM/dd hh:mm:ss").format(new Date()) + ": " + t.getMessage());
@@ -476,7 +488,7 @@ public class Ingestion {
 	 * @param input
 	 *            the input locator as a String
 	 * @return the actual input locator
-	 * @throws {@link RuntimeException} if input is a ZIP and unzipping fails
+	 * @throws {@link RuntimeException} if input is a ZIP and unzipping fails {@link net.lingala.zip4j.exception.ZipException}
 	 */
     public String prepareInput(String input) {
         if (new File(input).isDirectory()) return input;
