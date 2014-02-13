@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
 public class Ingestion {
 
     public final static String TOOL_URI = "http://data.dm2e.eu/data/tools/dm2e-direct";
-    public final static String VERSION = "1.0";
+    public final static String VERSION = "1.1";
 
     protected Logger log = LoggerFactory.getLogger(getClass().getName());
 
