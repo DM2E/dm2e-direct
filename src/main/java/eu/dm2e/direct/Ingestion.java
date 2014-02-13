@@ -343,9 +343,16 @@ public class Ingestion {
     }
 
 
+    /**
+     * Finds the root stylesheet in a directory.
+     * 
+     * @param zipdir Directory containing the unzipped xslt files
+     * @return the first stylesheet containing 'xsl:template match="/"'
+     */
     public String grepRootStylesheet(String zipdir) {
         if (!new File(zipdir).isDirectory()) return zipdir;
         Pattern pattern = Pattern.compile("xsl:template match=\"/\"");
+        String rootFile = null;
         for (String file : DataTool.getFiles(zipdir)) {
 
             Scanner scanner = null;
@@ -356,10 +363,13 @@ public class Ingestion {
             } finally {
             	scanner.close();
             }
-            if (scanner.findWithinHorizon(pattern, 0) != null) return file;
+            if (scanner.findWithinHorizon(pattern, 0) != null) {
+            	rootFile = file;
+            	break;
+            }
         }
 
-        return null;
+        return rootFile;
 
     }
 
