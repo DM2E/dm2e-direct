@@ -461,6 +461,23 @@ public class Ingestion {
 
     }
 
+    /**
+	 * Finds the actual location of an input
+	 * <p>
+	 * If the input is a directory name it is returned
+	 * </p>
+	 * <p>
+	 * If the input is an HTTP or an FTP link, it is downloaded and the local location returned
+	 * <p>
+	 * If the input is the path to a ZIP file, it is unzipped and the unzip
+	 * directory is returned
+	 * </p>
+	 * 
+	 * @param input
+	 *            the input locator as a String
+	 * @return the actual input locator
+	 * @throws {@link RuntimeException} if input is a ZIP and unzipping fails
+	 */
     public String prepareInput(String input) {
         if (new File(input).isDirectory()) return input;
         if (input.startsWith("http") || input.startsWith("ftp")) {
