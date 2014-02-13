@@ -6,9 +6,15 @@ package eu.dm2e.direct;
 
 import eu.dm2e.grafeo.Grafeo;
 import eu.dm2e.grafeo.jena.GrafeoImpl;
+import eu.dm2e.validation.Dm2eValidationReport;
+import eu.dm2e.validation.Dm2eValidator;
+import eu.dm2e.validation.ValidationException;
+import eu.dm2e.validation.ValidationLevel;
+import eu.dm2e.validation.validator.Dm2eSpecificationVersion;
 import net.lingala.zip4j.core.ZipFile;
 import net.sf.saxon.Controller;
 import net.sf.saxon.serialize.MessageEmitter;
+
 import org.apache.commons.cli.*;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
@@ -19,6 +25,7 @@ import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
+
 import java.io.*;
 import java.net.URI;
 import java.util.*;
@@ -34,7 +41,7 @@ import java.util.regex.Pattern;
 public class Ingestion {
 
     public final static String TOOL_URI = "http://data.dm2e.eu/data/tools/dm2e-direct";
-    public final static String VERSION = "1.0";
+    public final static String VERSION = "1.1";
 
     protected Logger log = LoggerFactory.getLogger(getClass().getName());
 
@@ -51,6 +58,7 @@ public class Ingestion {
     String version;
     String datasetURI;
     String label;
+	Dm2eValidator validator;
     FileWriter xslLog;
     FileWriter ingestionLog;
     List<String> include = new ArrayList<String>();
@@ -93,12 +101,10 @@ public class Ingestion {
             HelpFormatter help = new HelpFormatter();
             help.printHelp("ingest", options);
             return;
-
         }
 
-
         Properties properties = new Properties();
-        File defaultConfig = new File("default.properties");
+        File defaultConfig = new File(Ingestion.class.getResource("/default.properties").getFile());
         if (defaultConfig.exists()) {
             System.out.println("Loading default configuration: default.properties");
             try {
@@ -170,6 +176,28 @@ public class Ingestion {
                 include.add(s);
             }
         }
+		if (properties.get("dm2e-model-version") == null) {
+			final String msg = "dm2e-model-version is not set!";
+        	log(msg, System.err);
+        	log("Supported versions:", System.err);
+        	for (Dm2eSpecificationVersion thisVersion : Dm2eSpecificationVersion.values()) {
+        		log("  * " + thisVersion.getVersionString(), System.err);
+        	}
+        	throw new RuntimeException(msg);
+        }
+
+        final String dm2eModelVersion = properties.getProperty("dm2e-model-version");
+        try {
+			validator = Dm2eSpecificationVersion.forString(dm2eModelVersion).getValidator();
+		} catch (NoSuchFieldException e1) {
+        	final String msg = "Unsupported 'dm2e-model-version': " + dm2eModelVersion;
+			log(msg, System.err);
+        	log("Supported versions:", System.err);
+        	for (Dm2eSpecificationVersion thisVersion : Dm2eSpecificationVersion.values()) {
+        		log("  * " + thisVersion.getVersionString(), System.err);
+        	}
+        	throw new RuntimeException(msg);
+		}
         endpointUpdate = properties.getProperty("endpointUpdate");
         endpointSelect = properties.getProperty("endpointSelect");
         provider = properties.getProperty("provider");
@@ -227,6 +255,10 @@ public class Ingestion {
 
     }
 
+	/**
+	 * Logs to the XSL transformation log
+	 * @param message
+	 */
     protected void xslLog(String message) {
         try {
             xslLog.write(message);
@@ -237,6 +269,10 @@ public class Ingestion {
 
     }
 
+	/**
+	 * Logs to the ingestion log
+	 * @param message
+	 */
     protected void log(String message) {
         try {
             ingestionLog.write(new java.text.SimpleDateFormat("MM/dd hh:mm:ss").format(new Date()) + ": " + message);
@@ -247,7 +283,20 @@ public class Ingestion {
         }
 
     }
+    /**
+     * Logs to the ingestion log and the given print stream (such aus System.out or System.err)
+     * @param message the message
+     * @param out the print stream to write to
+     */
+    protected void log(String message, PrintStream out) {
+    	log(message);
+    	out.println(message);
+    }
 
+	/**
+	 * Logs to the ingestion log
+	 * @param t
+	 */
     protected void log(Throwable t) {
         try {
             ingestionLog.write(new java.text.SimpleDateFormat("MM/dd hh:mm:ss").format(new Date()) + ": " + t.getMessage());
@@ -263,7 +312,7 @@ public class Ingestion {
     }
 
 
-    public void processFile(String input) {
+    public void processFile(String input) throws ValidationException {
         try {
             xslLog("===============================");
             xslLog("Date: " + new Date());
@@ -321,13 +370,25 @@ public class Ingestion {
 
                 }
             }
-            Grafeo g = new GrafeoImpl(tmp);
-            g.postToEndpoint(endpointUpdate, graphName);
+            GrafeoImpl g = new GrafeoImpl(tmp);
+            //
+            // Validation!
+            //
+            Dm2eValidationReport validationReport = validator.validateWithDm2e(g.getModel());
+            if (! validationReport.containsErrors()) {
+            	log("Output validated. Yay :)");
+            	g.postToEndpoint(endpointUpdate, graphName);
+            } else {
+            	log(validationReport.exportToString(ValidationLevel.ERROR, false, false));
+            	throw new ValidationException(validationReport);
+            }
             System.out.print(".");
             fileCount++;
             if (fileCount % 50 == 0) {
                 System.out.println("   " + fileCount);
             }
+        } catch (ValidationException e) {
+        	throw e;
         } catch (Throwable t) {
             log(t);
             System.out.print("x");
@@ -336,16 +397,20 @@ public class Ingestion {
                 System.out.println("   " + fileCount);
             }
             throw new RuntimeException(t);
-
         }
-
-
     }
 
 
+    /**
+     * Finds the root stylesheet in a directory.
+     * 
+     * @param zipdir Directory containing the unzipped xslt files
+     * @return the first stylesheet containing 'xsl:template match="/"'
+     */
     public String grepRootStylesheet(String zipdir) {
         if (!new File(zipdir).isDirectory()) return zipdir;
         Pattern pattern = Pattern.compile("xsl:template match=\"/\"");
+        String rootFile = null;
         for (String file : DataTool.getFiles(zipdir)) {
 
             Scanner scanner = null;
@@ -356,10 +421,13 @@ public class Ingestion {
             } finally {
             	scanner.close();
             }
-            if (scanner.findWithinHorizon(pattern, 0) != null) return file;
+            if (scanner.findWithinHorizon(pattern, 0) != null) {
+            	rootFile = file;
+            	break;
+            }
         }
 
-        return null;
+        return rootFile;
 
     }
 
@@ -396,18 +464,18 @@ public class Ingestion {
         Grafeo g = new GrafeoImpl();
         g.getObjectMapper().addObject(ds);
         g.getObjectMapper().addObject(activity);
-        g.postToEndpoint(endpointUpdate, graphName);
-        log.info("Provenance: " + g.getTerseTurtle());
-        System.out.println("Provenance written.");
-        System.out.println("Check result at: http://lelystad.informatik.uni-mannheim.de:3000/direct/html/dataset/" + provider + "/" + dataset + "/" + version);
 
         List<String> errors = new ArrayList<String>();
+        ValidationException validationException = null;
         if (!useOAIPMH) {
             File f = new File(input);
             if (f.isFile()) {
                 try {
                     processFile(input);
-                } catch (Throwable t) {
+                } catch (ValidationException e) {
+                	validationException = e;
+                	errors.add(input);
+                } catch (RuntimeException t) {
                     log(t);
                     log.error("\n Ingestion Error: " + t.getMessage(), t);
                     errors.add(input);
@@ -416,7 +484,11 @@ public class Ingestion {
                 for (String file : DataTool.getFiles(f.toString())) {
                     try {
                         processFile(file);
-                    } catch (Throwable t) {
+                    } catch (ValidationException e) {
+                    	validationException = e;
+                    	errors.add(file);
+                    	break;
+                    } catch (RuntimeException t) {
                         log(t);
                         log.error("\n Ingestion Error: " + t.getMessage(), t);
                         errors.add(input);
@@ -426,7 +498,6 @@ public class Ingestion {
 
             }
         } else {
-
             PMHarvester harvester = new PMHarvester(input);
             List<String> todo = include.isEmpty() ? harvester.getIdentifiers() : include;
             for (String id : todo) {
@@ -435,7 +506,11 @@ public class Ingestion {
                 target = DataTool.download(target);
                 try {
                     processFile(target);
-                } catch (Throwable t) {
+                } catch (ValidationException e) {
+                	validationException = e;
+                    errors.add(id);
+                	break;
+                } catch (RuntimeException t) {
                     log.error("\n Ingestion Error: " + t.getMessage(), t);
                     log(t);
                     errors.add(id);
@@ -447,10 +522,36 @@ public class Ingestion {
         for (String err : errors) {
             System.out.println(err);
         }
+        if (null == validationException) {
+        	g.postToEndpoint(endpointUpdate, graphName);
+        	log.info("Provenance: " + g.getTerseTurtle());
+        	System.out.println("Provenance written.");
+        	System.out.println("Check result at: http://lelystad.informatik.uni-mannheim.de:3000/direct/html/dataset/" + provider + "/" + dataset + "/" + version);
+        } else {
+        	log("Validation Errrors occured, NOT INGESTED.", System.out);
+        	log(validationException.getReport().exportToString(ValidationLevel.ERROR, false, true), System.out);
+        }
 
 
     }
 
+    /**
+	 * Finds the actual location of an input
+	 * <p>
+	 * If the input is a directory name it is returned
+	 * </p>
+	 * <p>
+	 * If the input is an HTTP or an FTP link, it is downloaded and the local location returned
+	 * <p>
+	 * If the input is the path to a ZIP file, it is unzipped and the unzip
+	 * directory is returned
+	 * </p>
+	 * 
+	 * @param input
+	 *            the input locator as a String
+	 * @return the actual input locator
+	 * @throws {@link RuntimeException} if input is a ZIP and unzipping fails {@link net.lingala.zip4j.exception.ZipException}
+	 */
     public String prepareInput(String input) {
         if (new File(input).isDirectory()) return input;
         if (input.startsWith("http") || input.startsWith("ftp")) {

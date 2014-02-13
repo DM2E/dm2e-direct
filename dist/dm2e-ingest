@@ -1,0 +1,4 @@
+#!/bin/bash
+REPO=~konstantin/build/dm2e-direct
+java -jar $REPO/target/*-jar-with-dependencies.jar $*
+
