@@ -1,0 +1,6 @@
+target
+ingestion.log
+xsl.log
+.project
+.settings
+.classpath
