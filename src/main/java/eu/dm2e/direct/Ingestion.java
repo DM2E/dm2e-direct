@@ -142,13 +142,7 @@ public class Ingestion {
 
     public void ingest(CommandLine cmd, Properties properties) {
         long start = System.currentTimeMillis();
-        try {
-            ingestionLog = new FileWriter(new File("ingestion.log"), true);
-            ingestionLog.write("New log file\n");
-            log("Check logging: ok");
-        } catch (IOException e) {
-            throw new RuntimeException("An exception occurred: " + e, e);
-        }
+
         xslt = properties.getProperty("xslt");
         if (properties.getProperty("xslt-props") != null) {
             try {
@@ -207,6 +201,13 @@ public class Ingestion {
         datasetURI = base + provider.toLowerCase() + "/" + dataset.toLowerCase();
         version = "" + DateTime.now().getMillis();
         graphName = datasetURI + "/" + version;
+        try {
+            ingestionLog = new FileWriter(new File("ingestion-" + provider + "-" + dataset + "-" + version + ".log"), true);
+            ingestionLog.write("New log file\n");
+            log("Check logging: ok");
+        } catch (IOException e) {
+            throw new RuntimeException("An exception occurred: " + e, e);
+        }
         try {
             xslLog = new FileWriter(new File("xsl.log"), true);
         } catch (IOException e) {
