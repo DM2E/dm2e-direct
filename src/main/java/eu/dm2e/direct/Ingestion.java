@@ -420,6 +420,8 @@ public class Ingestion {
                     log(validationReport.exportToString(validationLevel, true, false));
                     throw new ValidationException(validationReport);
                 }
+            } else {
+                g.postToEndpoint(endpointUpdate, graphName);
             }
             System.out.print(".");
             fileCount++;
@@ -535,7 +537,7 @@ public class Ingestion {
                     } catch (RuntimeException t) {
                         log(t);
                         log.error("\n Ingestion Error: " + t.getMessage(), t);
-                        errors.add(input);
+                        errors.add(file);
                     }
 
                 }
