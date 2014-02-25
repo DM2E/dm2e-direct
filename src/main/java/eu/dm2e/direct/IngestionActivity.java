@@ -1,9 +1,10 @@
 package eu.dm2e.direct;
 
+import eu.dm2e.NS;
 import eu.dm2e.grafeo.annotations.RDFClass;
 import eu.dm2e.grafeo.annotations.RDFProperty;
 import eu.dm2e.grafeo.gom.SerializablePojo;
-import eu.dm2e.NS;
+import org.joda.time.DateTime;
 
 import java.net.URI;
 import java.util.HashSet;
@@ -52,4 +53,14 @@ public class IngestionActivity extends SerializablePojo<IngestionActivity> {
     public void setAgent(URI agent) {
         this.agent = agent;
     }
+
+    @RDFProperty(NS.PROV.PROP_WAS_STARTED_AT)
+    private DateTime start;
+    public DateTime getStart() { return start; }
+    public void setStart(DateTime start) { this.start = start; }
+
+    @RDFProperty(NS.PROV.PROP_WAS_ENDED_AT)
+    private DateTime end;
+    public DateTime getEnd() { return end; }
+    public void setEnd(DateTime end) { this.end = end; }
 }

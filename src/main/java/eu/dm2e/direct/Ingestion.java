@@ -64,6 +64,7 @@ public class Ingestion {
     List<String> include = new ArrayList<String>();
     Set<String> exclude = new HashSet<String>();
     ValidationLevel validationLevel = ValidationLevel.ERROR;
+    String dm2eModelVersion;
 
     long fileCount = 0;
     boolean useOAIPMH = false;
@@ -219,6 +220,7 @@ public class Ingestion {
             for (Dm2eSpecificationVersion thisVersion : Dm2eSpecificationVersion.values()) {
                 log("  * " + thisVersion.getVersionString(), System.err);
             }
+            dm2eModelVersion =  properties.get("dm2e-model-version").toString();
             return;
         }
 
@@ -495,7 +497,7 @@ public class Ingestion {
             }
 
         }
-
+        activity.setStart(new DateTime());
 
         VersionedDatasetPojo ds = new VersionedDatasetPojo();
         ds.setId(graphName);
@@ -505,11 +507,11 @@ public class Ingestion {
         ds.setDatasetID(URI.create(datasetURI));
         ds.findLatest(endpointSelect);
         ds.setJobURI(URI.create(activity.getId()));
+        ds.setDm2eModelVersion(dm2eModelVersion);
+        ds.setValidatedAtLevel(validationLevel==null?"OFF":validationLevel.name());
 
 
-        Grafeo g = new GrafeoImpl();
-        g.getObjectMapper().addObject(ds);
-        g.getObjectMapper().addObject(activity);
+
 
         List<String> errors = new ArrayList<String>();
         ValidationException validationException = null;
@@ -569,6 +571,10 @@ public class Ingestion {
             System.out.println(err);
         }
         if (null == validationException) {
+            activity.setEnd(new DateTime());
+            Grafeo g = new GrafeoImpl();
+            g.getObjectMapper().addObject(ds);
+            g.getObjectMapper().addObject(activity);
             g.postToEndpoint(endpointUpdate, graphName);
             log.info("Provenance: " + g.getTerseTurtle());
             System.out.println("Provenance written.");

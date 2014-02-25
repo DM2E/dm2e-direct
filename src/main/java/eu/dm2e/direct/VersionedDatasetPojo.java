@@ -1,19 +1,18 @@
 package eu.dm2e.direct;
 
-import java.net.URI;
-import java.net.URISyntaxException;
-//import java.util.Date;
-
-import org.joda.time.DateTime;
-
 import com.hp.hpl.jena.query.ResultSet;
-
 import eu.dm2e.NS;
 import eu.dm2e.grafeo.annotations.Namespaces;
 import eu.dm2e.grafeo.annotations.RDFClass;
 import eu.dm2e.grafeo.annotations.RDFProperty;
 import eu.dm2e.grafeo.gom.SerializablePojo;
 import eu.dm2e.grafeo.jena.SparqlSelect;
+import org.joda.time.DateTime;
+
+import java.net.URI;
+import java.net.URISyntaxException;
+
+//import java.util.Date;
 
 /**
  * Pojo representing a Versioned Dataset.
@@ -77,6 +76,35 @@ public class VersionedDatasetPojo extends SerializablePojo<VersionedDatasetPojo>
     private String comment;
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
-    
 
+    @RDFProperty(NS.DM2E_UNOFFICIAL.PROP_VALIDATED_AT_LEVEL)
+    private String validatedAtLevel;
+    @RDFProperty(NS.DM2E_UNOFFICIAL.PROP_STABILITY)
+    private String stability = "TRANSIENT";
+    @RDFProperty(NS.DM2E_UNOFFICIAL.PROP_DM2E_VERSION)
+    private String dm2eModelVersion;
+
+    public String getValidatedAtLevel() {
+        return validatedAtLevel;
+    }
+
+    public void setValidatedAtLevel(String validatedAtLevel) {
+        this.validatedAtLevel = validatedAtLevel;
+    }
+
+    public String getStability() {
+        return stability;
+    }
+
+    public void setStability(String stability) {
+        this.stability = stability;
+    }
+
+    public String getDm2eModelVersion() {
+        return dm2eModelVersion;
+    }
+
+    public void setDm2eModelVersion(String dm2eModelVersion) {
+        this.dm2eModelVersion = dm2eModelVersion;
+    }
 }
