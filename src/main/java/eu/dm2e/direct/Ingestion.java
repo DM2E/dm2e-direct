@@ -63,7 +63,7 @@ public class Ingestion {
     File ingestionLogFile;
     List<String> include = new ArrayList<String>();
     Set<String> exclude = new HashSet<String>();
-    ValidationLevel validationLevel = ValidationLevel.ERROR;
+    ValidationLevel validationLevel = ValidationLevel.FATAL;
     String dm2eModelVersion;
 
     long fileCount = 0;
