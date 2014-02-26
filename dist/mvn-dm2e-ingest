@@ -1,2 +1,2 @@
 #!/bin/bash
-mvn -o -q exec:java -Dexec.mainClass=eu.dm2e.direct.Ingestion -Dexec.args="$*"
+mvn exec:java -Dexec.mainClass=eu.dm2e.direct.Ingestion -Dexec.args="$*"
