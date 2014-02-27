@@ -553,9 +553,11 @@ public class Ingestion {
 		ParameterizedSparqlString sb = new ParameterizedSparqlString();
 		sb.append("INSERT { GRAPH <");
 		sb.append(graphName);
-		sb.append("> {");
+		sb.append("> {  \n");
 		sb.append(sw.toString());
-		sb.append("} }");
+		sb.append("}  \n");
+		sb.append("WHERE { } ");
+		sb.append("}");
 		UpdateRequest update = UpdateFactory.create();
 		update.add(sb.toString());
 		log.info("UPDATE request {}", update.toString());
