@@ -551,13 +551,12 @@ public class Ingestion {
 		RDFWriter rdfWriter = jenaModel.getWriter("N-TRIPLE");
 		rdfWriter.write(jenaModel, sw, null);
 		ParameterizedSparqlString sb = new ParameterizedSparqlString();
-		sb.append("INSERT { GRAPH <");
-		sb.append(graphName);
-		sb.append("> {  \n");
-		sb.append(sw.toString());
+		sb.append("INSERT {  \n");
+		sb.append("  GRAPH < " + graphName + "> {  \n");
+		sb.append(		sw.toString());
+		sb.append("  }  \n");
 		sb.append("}  \n");
 		sb.append("WHERE { } ");
-		sb.append("}");
 		UpdateRequest update = UpdateFactory.create();
 		update.add(sb.toString());
 		log.info("UPDATE request {}", update.toString());
