@@ -557,8 +557,9 @@ public class Ingestion {
 		sb.append(sw.toString());
 		sb.append("} }");
 		UpdateRequest update = UpdateFactory.create();
-		log.debug("UPDATE request {}", update.toString());
-		log(update.toString());
+		update.add(sb.toString());
+		log.info("UPDATE request {}", update.toString());
+		log("UPDATE Request: " + update.toString());
 		UpdateProcessor exec = UpdateExecutionFactory.createRemoteForm(update, endpointUpdate);
 		exec.execute();
 	}
