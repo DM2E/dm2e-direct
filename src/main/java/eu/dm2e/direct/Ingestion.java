@@ -4,8 +4,10 @@
  */
 package eu.dm2e.direct;
 
+import com.hp.hpl.jena.query.ResultSet;
 import eu.dm2e.grafeo.Grafeo;
 import eu.dm2e.grafeo.jena.GrafeoImpl;
+import eu.dm2e.grafeo.jena.SparqlSelect;
 import eu.dm2e.validation.Dm2eValidationReport;
 import eu.dm2e.validation.Dm2eValidator;
 import eu.dm2e.validation.ValidationException;
@@ -87,6 +89,9 @@ public class Ingestion {
         options.addOption("kt", "keep-temporary", true, "Keep temporary files (in default temp directory) for debugging. ");
         options.addOption("v", "validation", true, "Validate and stop at specified level. One of FATAL, ERROR, WARNING, NOTICE, OFF. Default: ERROR ");
         options.addOption("dm2e", "dm2e-model-version", true, "DM2E Model Version. Leave empty to get a list of supported versions.");
+        // The following are by design only usable as command line parameters!
+        options.addOption("delV", "delete-version", true, "Graph URI. Delete this ingestion (USE WITH CARE!)");
+        options.addOption("delA", "delete-all-versions", true, "Collection URI. Delete all ingestions for this collection (USE WITH CARE!!!!)");
         options.addOption("h", "help", false, "Show this help.");
 
         CommandLineParser clp = new BasicParser();
@@ -108,17 +113,17 @@ public class Ingestion {
         }
 
         Properties properties = new Properties();
-        File defaultConfig = new File(Ingestion.class.getResource("/default.properties").getFile());
-        if (defaultConfig.exists()) {
+        InputStream defaultConfigStream = Ingestion.class.getResourceAsStream("default.properties");
+        if (defaultConfigStream!=null) {
             System.out.println("Loading default configuration from classpath: default.properties");
             try {
-                properties.load(new FileInputStream(defaultConfig));
+                properties.load(defaultConfigStream);
             } catch (IOException e) {
                 System.err.println("Error reading default config: " + e.getMessage());
             }
         }
         // Addtional default in working directory
-        defaultConfig = new File("default.properties");
+        File defaultConfig = new File("eu/dm2e/direct/default.properties");
         if (defaultConfig.exists()) {
             System.out.println("Loading default configuration from workdir: default.properties");
             try {
@@ -141,7 +146,7 @@ public class Ingestion {
             properties.put(o.getLongOpt(), o.getValue());
         }
 
-        if (cmd.getArgs().length == 0 && properties.getProperty("input") == null) {
+        if (cmd.getArgs().length == 0 && properties.getProperty("input") == null && !(cmd.hasOption("delete-version") || cmd.hasOption("delete-all-versions"))) {
             System.out.println("No input files. Either add them to a config or pass as argument: ");
             HelpFormatter help = new HelpFormatter();
             help.printHelp("ingest", options);
@@ -151,8 +156,65 @@ public class Ingestion {
         System.out.println("Configuration used: ");
         properties.list(System.out);
 
+        if (cmd.hasOption("delete-version") || cmd.hasOption("delete-all-versions")) {
+            new Ingestion().delete(cmd, properties);
+            return;
+        }
+
         new Ingestion().ingest(cmd, properties);
 
+    }
+
+    public void delete(CommandLine cmd, Properties properties) {
+        endpointUpdate = properties.getProperty("endpointUpdate");
+        endpointSelect = properties.getProperty("endpointSelect");
+        System.out.println("DELETE MODE!!!");
+        if (cmd.hasOption("delete-version"))   {
+            System.out.println("The following graph will be deleted: " + cmd.getOptionValue("delete-version"));
+            if (areYouSure()) {
+                deleteVersion(cmd.getOptionValue("delete-version"));
+            }
+            return;
+        }
+        if (cmd.hasOption("delete-all-versions"))   {
+            String collection =  cmd.getOptionValue("delete-all-versions");
+            ResultSet iter = new SparqlSelect.Builder()
+                    .where(String.format("graph ?g {?g <http://www.w3.org/ns/prov#specializationOf> <%s> }", collection))
+                    .select("?g")
+                    .endpoint(endpointSelect)
+                    .build()
+                    .execute();
+            List<String> versions = new ArrayList<>();
+            System.out.println("The following versions will be deleted:");
+            while (iter.hasNext()) {
+                String version = iter.next().get("?g").asResource().getURI();
+                versions.add(version);
+                System.out.println("   " + version);
+            }
+            if (areYouSure()) {
+                for (String s:versions) {
+                    deleteVersion(s);
+                }
+            }
+
+        }
+    }
+
+    private boolean areYouSure() {
+        System.out.println("Are your sure (yes/no)?");
+        try {
+            String answer = new BufferedReader(new InputStreamReader(System.in)).readLine();
+            if (answer.equals("yes")) return true;
+        } catch (IOException e) {
+            throw new RuntimeException("An exception occurred: " + e, e);
+        }
+        return false;
+    }
+
+    private void deleteVersion(String version) {
+        Grafeo g = new GrafeoImpl();
+        g.emptyGraph(endpointUpdate, version);
+        System.out.println("Graph <" + version + "> deleted.");
     }
 
     public void ingest(CommandLine cmd, Properties properties) {
@@ -220,7 +282,7 @@ public class Ingestion {
             for (Dm2eSpecificationVersion thisVersion : Dm2eSpecificationVersion.values()) {
                 log("  * " + thisVersion.getVersionString(), System.err);
             }
-            dm2eModelVersion =  properties.get("dm2e-model-version").toString();
+            dm2eModelVersion = properties.get("dm2e-model-version").toString();
             return;
         }
 
@@ -508,9 +570,7 @@ public class Ingestion {
         ds.findLatest(endpointSelect);
         ds.setJobURI(URI.create(activity.getId()));
         ds.setDm2eModelVersion(dm2eModelVersion);
-        ds.setValidatedAtLevel(validationLevel==null?"OFF":validationLevel.name());
-
-
+        ds.setValidatedAtLevel(validationLevel == null ? "OFF" : validationLevel.name());
 
 
         List<String> errors = new ArrayList<String>();
@@ -585,7 +645,7 @@ public class Ingestion {
             // log(validationException.getReport().exportToString(ValidationLevel.ERROR, true, true));
         }
         System.out.println("Report: " + ingestionLogFile.getName());
-        if (xslLogFile!=null) System.out.println("XSLT Report: " + xslLogFile.getName());
+        if (xslLogFile != null) System.out.println("XSLT Report: " + xslLogFile.getName());
 
     }
 
