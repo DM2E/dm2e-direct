@@ -556,7 +556,7 @@ public class Ingestion {
 		sb.append(		sw.toString());
 		sb.append("  }  \n");
 		sb.append("}  \n");
-		sb.append("WHERE { } ");
+//		sb.append("WHERE { } ");
 		log.info("UPDATE request '{}'", sb.toString());
 		log("UPDATE request " + sb.toString());
 		UpdateRequest update = UpdateFactory.create();
