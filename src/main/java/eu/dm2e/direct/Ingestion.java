@@ -556,12 +556,10 @@ public class Ingestion {
 		sb.append(		sw.toString());
 		sb.append("  }  \n");
 		sb.append("}  \n");
-//		sb.append("WHERE { } ");
-		log.info("UPDATE request '{}'", sb.toString());
-		log("UPDATE request " + sb.toString());
+//		log.info("UPDATE request '{}'", sb.toString());
+//		log("UPDATE request " + sb.toString());
 		UpdateRequest update = UpdateFactory.create();
 		update.add(sb.toString());
-		log("UPDATE Request: " + update.toString());
 		UpdateProcessor exec = UpdateExecutionFactory.createRemoteForm(update, endpointUpdate);
 		exec.execute();
 	}
