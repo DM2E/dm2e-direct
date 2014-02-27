@@ -4,7 +4,58 @@
  */
 package eu.dm2e.direct;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Properties;
+import java.util.Scanner;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
+
+import net.lingala.zip4j.core.ZipFile;
+import net.sf.saxon.Controller;
+import net.sf.saxon.serialize.MessageEmitter;
+
+import org.apache.commons.cli.BasicParser;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
+import org.joda.time.DateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.hp.hpl.jena.query.ParameterizedSparqlString;
 import com.hp.hpl.jena.query.ResultSet;
+import com.hp.hpl.jena.rdf.model.Model;
+import com.hp.hpl.jena.rdf.model.ModelFactory;
+import com.hp.hpl.jena.rdf.model.RDFWriter;
+import com.hp.hpl.jena.update.UpdateExecutionFactory;
+import com.hp.hpl.jena.update.UpdateFactory;
+import com.hp.hpl.jena.update.UpdateProcessor;
+import com.hp.hpl.jena.update.UpdateRequest;
+
 import eu.dm2e.grafeo.Grafeo;
 import eu.dm2e.grafeo.jena.GrafeoImpl;
 import eu.dm2e.grafeo.jena.SparqlSelect;
@@ -13,23 +64,6 @@ import eu.dm2e.validation.Dm2eValidator;
 import eu.dm2e.validation.ValidationException;
 import eu.dm2e.validation.ValidationLevel;
 import eu.dm2e.validation.validator.Dm2eSpecificationVersion;
-import net.lingala.zip4j.core.ZipFile;
-import net.sf.saxon.Controller;
-import net.sf.saxon.serialize.MessageEmitter;
-import org.apache.commons.cli.*;
-import org.joda.time.DateTime;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerException;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.stream.StreamSource;
-import java.io.*;
-import java.net.URI;
-import java.util.*;
-import java.util.regex.Pattern;
 
 /**
  * A direct ingestion tool to ingest XML data via an XSLT mapping
@@ -471,21 +505,23 @@ public class Ingestion {
 
                 }
             }
-            GrafeoImpl g = new GrafeoImpl(tmp);
+//            GrafeoImpl g = new GrafeoImpl(tmp);
+            Model jenaModel = ModelFactory.createDefaultModel();
+            jenaModel.read(new FileInputStream(tmp), null);
             //
             // Validation!
             //
             if (validationLevel != null) {
-                Dm2eValidationReport validationReport = validator.validateWithDm2e(g.getModel());
+                Dm2eValidationReport validationReport = validator.validateWithDm2e(jenaModel);
                 if (!validationReport.containsErrors(validationLevel)) {
-                    log("Output validated. Yay :)");
-                    g.postToEndpoint(endpointUpdate, graphName);
+                	log("Output validated. Yay :)");
+                	postToEndpoint(jenaModel);
                 } else {
                     log(validationReport.exportToString(validationLevel, true, false));
                     throw new ValidationException(validationReport);
                 }
             } else {
-                g.postToEndpoint(endpointUpdate, graphName);
+                postToEndpoint(jenaModel);
             }
             System.out.print(".");
             fileCount++;
@@ -509,6 +545,21 @@ public class Ingestion {
             throw new RuntimeException(t);
         }
     }
+
+	private void postToEndpoint(Model jenaModel) {
+		StringWriter sw = new StringWriter();
+		RDFWriter rdfWriter = jenaModel.getWriter("N-TRIPLE");
+		rdfWriter.write(jenaModel, sw, null);
+		ParameterizedSparqlString sb = new ParameterizedSparqlString();
+		sb.append("INSERT { GRAPH <");
+		sb.append(graphName);
+		sb.append("> {");
+		sb.append(sw.toString());
+		sb.append("} }");
+		UpdateRequest update = UpdateFactory.create();
+		UpdateProcessor exec = UpdateExecutionFactory.createRemoteForm(update, endpointUpdate);
+		exec.execute();
+	}
 
 
     /**
