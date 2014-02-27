@@ -552,7 +552,7 @@ public class Ingestion {
 		rdfWriter.write(jenaModel, sw, null);
 		ParameterizedSparqlString sb = new ParameterizedSparqlString();
 		sb.append("INSERT DATA {  \n");
-		sb.append("  GRAPH < " + graphName + "> {  \n");
+		sb.append("  GRAPH <" + graphName + "> {  \n");
 		sb.append(		sw.toString());
 		sb.append("  }  \n");
 		sb.append("}  \n");
