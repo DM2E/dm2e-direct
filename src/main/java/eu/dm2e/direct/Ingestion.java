@@ -77,7 +77,7 @@ public class Ingestion {
     public final static String TOOL_URI = "http://data.dm2e.eu/data/tools/dm2e-direct";
     public final static String VERSION = "1.1";
 
-    protected Logger log = LoggerFactory.getLogger(getClass().getName());
+    private static final Logger log = LoggerFactory.getLogger(Ingestion.class);
 
     String xslt;
     Properties xsltProps = new Properties();
@@ -558,6 +558,7 @@ public class Ingestion {
 		sb.append("} }");
 		UpdateRequest update = UpdateFactory.create();
 		log.debug("UPDATE request {}", update.toString());
+		log(update.toString());
 		UpdateProcessor exec = UpdateExecutionFactory.createRemoteForm(update, endpointUpdate);
 		exec.execute();
 	}
