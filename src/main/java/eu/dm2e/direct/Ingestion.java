@@ -246,8 +246,14 @@ public class Ingestion {
     }
 
     private void deleteVersion(String version) {
-        Grafeo g = new GrafeoImpl();
-        g.emptyGraph(endpointUpdate, version);
+		UpdateRequest update = UpdateFactory.create();
+		update.add("DROP GRAPH {  <" + graphName + "> }");
+		UpdateProcessor exec = UpdateExecutionFactory.createRemoteForm(update, endpointUpdate);
+
+		long t0 = System.nanoTime();
+		exec.execute();
+
+		System.out.println("Deletion took " + ((System.nanoTime() - t0) / 1_000_000) + "ms.");
         System.out.println("Graph <" + version + "> deleted.");
     }
 
@@ -505,7 +511,7 @@ public class Ingestion {
 
                 }
             }
-//            GrafeoImpl g = new GrafeoImpl(tmp);
+
             Model jenaModel = ModelFactory.createDefaultModel();
             jenaModel.read(new FileInputStream(tmp), null);
             //
