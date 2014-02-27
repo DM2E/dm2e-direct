@@ -246,7 +246,7 @@ public class Ingestion {
     }
 
     private void deleteVersion(String version) {
-		UpdateRequest update = UpdateFactory.create("DROP GRAPH <" + graphName + ">");
+		UpdateRequest update = UpdateFactory.create("DROP GRAPH <" + version + ">");
 		UpdateProcessor exec = UpdateExecutionFactory.createRemoteForm(update, endpointUpdate);
 
 		long t0 = System.nanoTime();
