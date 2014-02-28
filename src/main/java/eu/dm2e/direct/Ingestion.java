@@ -311,7 +311,7 @@ public class Ingestion {
         if (endpointUpdate == null) throw new IllegalArgumentException("Must set 'endpointUpdate'");
 
         datasetURI = base + provider.toLowerCase() + "/" + dataset.toLowerCase();
-        version = "" + DateTime.now().getMillis();
+        version = "" + DateTime.now().toString("YYYYMMddHHmmssSSS");
         graphName = datasetURI + "/" + version;
         try {
             ingestionLogFile = new File("ingestion-" + provider + "-" + dataset + "-" + version + ".log");
