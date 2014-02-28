@@ -63,7 +63,7 @@ import eu.dm2e.validation.Dm2eValidationReport;
 import eu.dm2e.validation.Dm2eValidator;
 import eu.dm2e.validation.ValidationException;
 import eu.dm2e.validation.ValidationLevel;
-import eu.dm2e.validation.validator.Dm2eSpecificationVersion;
+import eu.dm2e.validation.validator.Dm2eValidatorVersion;
 
 /**
  * A direct ingestion tool to ingest XML data via an XSLT mapping
@@ -297,7 +297,9 @@ public class Ingestion {
         endpointUpdate = properties.getProperty("endpointUpdate");
         endpointSelect = properties.getProperty("endpointSelect");
         provider = properties.getProperty("provider");
+        if (provider == null) throw new IllegalArgumentException("Must set 'provider'");
         dataset = properties.getProperty("dataset");
+        if (dataset == null) throw new IllegalArgumentException("Must set 'dataset'");
         base = properties.getProperty("base");
         label = properties.getProperty("label");
         datasetURI = base + provider.toLowerCase() + "/" + dataset.toLowerCase();
@@ -318,7 +320,7 @@ public class Ingestion {
             final String msg = "dm2e-model-version is not set!";
             log(msg, System.err);
             log("Supported versions:", System.err);
-            for (Dm2eSpecificationVersion thisVersion : Dm2eSpecificationVersion.values()) {
+            for (Dm2eValidatorVersion thisVersion : Dm2eValidatorVersion.values()) {
                 log("  * " + thisVersion.getVersionString(), System.err);
             }
             dm2eModelVersion = properties.get("dm2e-model-version").toString();
@@ -328,12 +330,12 @@ public class Ingestion {
         final String dm2eModelVersion = properties.getProperty("dm2e-model-version");
         if (validationLevel != null) {
             try {
-                validator = Dm2eSpecificationVersion.forString(dm2eModelVersion).getValidator();
+                validator = Dm2eValidatorVersion.forString(dm2eModelVersion).getValidator();
             } catch (NoSuchFieldException e1) {
                 final String msg = "Unsupported 'dm2e-model-version': " + dm2eModelVersion;
                 log(msg, System.err);
                 log("Supported versions:", System.err);
-                for (Dm2eSpecificationVersion thisVersion : Dm2eSpecificationVersion.values()) {
+                for (Dm2eValidatorVersion thisVersion : Dm2eValidatorVersion.values()) {
                     log("  * " + thisVersion.getVersionString(), System.err);
                 }
                 return;
