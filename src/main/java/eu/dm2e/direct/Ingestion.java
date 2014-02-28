@@ -91,6 +91,7 @@ public class Ingestion {
     String graphName;
     String version;
     String datasetURI;
+    String rdfSerialization;
     String label;
     Dm2eValidator validator;
     FileWriter xslLog;
@@ -297,11 +298,18 @@ public class Ingestion {
         endpointUpdate = properties.getProperty("endpointUpdate");
         endpointSelect = properties.getProperty("endpointSelect");
         provider = properties.getProperty("provider");
-        if (provider == null) throw new IllegalArgumentException("Must set 'provider'");
         dataset = properties.getProperty("dataset");
-        if (dataset == null) throw new IllegalArgumentException("Must set 'dataset'");
         base = properties.getProperty("base");
         label = properties.getProperty("label");
+        rdfSerialization = properties.get("rdf-serialization") == null
+        		? "RDF/XML"
+        		: properties.getProperty("rdf-serialization");
+
+        if (provider == null) throw new IllegalArgumentException("Must set 'provider'");
+        if (dataset == null) throw new IllegalArgumentException("Must set 'dataset'");
+        if (endpointSelect == null) throw new IllegalArgumentException("Must set 'endpointSelect'");
+        if (endpointUpdate == null) throw new IllegalArgumentException("Must set 'endpointUpdate'");
+
         datasetURI = base + provider.toLowerCase() + "/" + dataset.toLowerCase();
         version = "" + DateTime.now().getMillis();
         graphName = datasetURI + "/" + version;
@@ -512,23 +520,21 @@ public class Ingestion {
 
                 }
             }
-//            GrafeoImpl g = new GrafeoImpl(tmp);
-            Model jenaModel = ModelFactory.createDefaultModel();
-            jenaModel.read(new FileInputStream(tmp), null);
+
             //
             // Validation!
             //
             if (validationLevel != null) {
-                Dm2eValidationReport validationReport = validator.validateWithDm2e(jenaModel);
+                Dm2eValidationReport validationReport = validator.validateWithDm2e(tmp, rdfSerialization);
                 if (!validationReport.containsErrors(validationLevel)) {
                 	log("Output validated. Yay :)");
-                	postToEndpoint(jenaModel);
+                	postToEndpoint(tmp);
                 } else {
                     log(validationReport.exportToString(validationLevel, true, false));
                     throw new ValidationException(validationReport);
                 }
             } else {
-                postToEndpoint(jenaModel);
+                postToEndpoint(tmp);
             }
             System.out.print(".");
             fileCount++;
@@ -553,7 +559,10 @@ public class Ingestion {
         }
     }
 
-	private void postToEndpoint(Model jenaModel) {
+	private void postToEndpoint(File tmp) throws FileNotFoundException {
+		FileInputStream fis = new FileInputStream(tmp);
+		Model jenaModel = ModelFactory.createDefaultModel();
+		jenaModel.read(fis, null, rdfSerialization);
 		StringWriter sw = new StringWriter();
 		RDFWriter rdfWriter = jenaModel.getWriter("N-TRIPLE");
 		rdfWriter.write(jenaModel, sw, null);
@@ -563,9 +572,6 @@ public class Ingestion {
 		sb.append(		sw.toString());
 		sb.append("  }  \n");
 		sb.append("}  \n");
-//		sb.append("WHERE { } ");
-//		log.info("UPDATE request '{}'", sb.toString());
-//		log("UPDATE request " + sb.toString());
 		UpdateRequest update = UpdateFactory.create();
 		update.add(sb.toString());
 //		log("UPDATE Request: " + update.toString());
