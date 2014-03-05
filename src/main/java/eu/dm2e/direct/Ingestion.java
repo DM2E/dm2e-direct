@@ -214,7 +214,7 @@ public class Ingestion {
         if (cmd.hasOption("delete-all-versions"))   {
             String collection =  cmd.getOptionValue("delete-all-versions");
             ResultSet iter = new SparqlSelect.Builder()
-                    .where(String.format("graph ?g {?g <http://www.w3.org/ns/prov#specializationOf> <%s> }", collection))
+                    .where(String.format("GRAPH ?g {?g <http://www.w3.org/ns/prov#specializationOf> <%s> }", collection))
                     .select("?g")
                     .endpoint(endpointSelect)
                     .build()
@@ -572,6 +572,7 @@ public class Ingestion {
 		sb.append(		sw.toString());
 		sb.append("  }  \n");
 		sb.append("}  \n");
+		log.info("Update Query for file '{}' : \n '{}'", tmp, sb.toString());
 		UpdateRequest update = UpdateFactory.create();
 		update.add(sb.toString());
 //		log("UPDATE Request: " + update.toString());
