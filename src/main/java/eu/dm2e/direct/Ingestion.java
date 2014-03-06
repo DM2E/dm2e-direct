@@ -665,7 +665,7 @@ public class Ingestion {
                     } catch (ValidationException e) {
                         validationException = e;
                         errors.add(file);
-                        break;
+//                        break;
                     } catch (RuntimeException t) {
                         log(t);
                         log.error("\n Ingestion Error: " + t.getMessage(), t);
