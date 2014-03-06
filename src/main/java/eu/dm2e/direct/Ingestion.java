@@ -596,14 +596,14 @@ public class Ingestion {
             Scanner scanner = null;
             try {
                 scanner = new Scanner(new File(file));
+                if (scanner.findWithinHorizon(pattern, 0) != null) {
+                	rootFile = file;
+                	break;
+                }
             } catch (FileNotFoundException e) {
                 throw new RuntimeException("An exception occurred: " + e, e);
             } finally {
                 scanner.close();
-            }
-            if (scanner.findWithinHorizon(pattern, 0) != null) {
-                rootFile = file;
-                break;
             }
         }
 
