@@ -310,7 +310,7 @@ public class Ingestion {
         if (endpointSelect == null) throw new IllegalArgumentException("Must set 'endpointSelect'");
         if (endpointUpdate == null) throw new IllegalArgumentException("Must set 'endpointUpdate'");
 
-        datasetURI = base + provider.toLowerCase() + "/" + dataset.toLowerCase();
+        datasetURI = base + provider+ "/" + dataset;
         version = "" + DateTime.now().toString("YYYYMMddHHmmssSSS");
         graphName = datasetURI + "/" + version;
         try {
