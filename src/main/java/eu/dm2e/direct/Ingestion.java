@@ -51,11 +51,14 @@ import com.hp.hpl.jena.query.ResultSet;
 import com.hp.hpl.jena.rdf.model.Model;
 import com.hp.hpl.jena.rdf.model.ModelFactory;
 import com.hp.hpl.jena.rdf.model.RDFWriter;
+import com.hp.hpl.jena.rdf.model.Resource;
+import com.hp.hpl.jena.rdf.model.StmtIterator;
 import com.hp.hpl.jena.update.UpdateExecutionFactory;
 import com.hp.hpl.jena.update.UpdateFactory;
 import com.hp.hpl.jena.update.UpdateProcessor;
 import com.hp.hpl.jena.update.UpdateRequest;
 
+import eu.dm2e.NS;
 import eu.dm2e.grafeo.Grafeo;
 import eu.dm2e.grafeo.jena.GrafeoImpl;
 import eu.dm2e.grafeo.jena.SparqlSelect;
@@ -63,6 +66,7 @@ import eu.dm2e.validation.Dm2eValidationReport;
 import eu.dm2e.validation.Dm2eValidator;
 import eu.dm2e.validation.ValidationException;
 import eu.dm2e.validation.ValidationLevel;
+import eu.dm2e.validation.ValidationProblemCategory;
 import eu.dm2e.validation.validator.Dm2eValidatorVersion;
 
 /**
@@ -378,7 +382,15 @@ public class Ingestion {
             start = System.currentTimeMillis();
             System.out.println("No command line arguments, processing configured input.");
             System.out.println("Time for default data setup in sec: " + ((double) args) / 1000);
-            processFileOrFolder(input);
+
+            try {
+            	// Make sure we don't ingest orphaned datasets
+            	checkForDatasetIdMismatch(input);
+            	processFileOrFolder(input);
+            } catch (ValidationException e) {
+            	log.error(e.getReport().exportToString(ValidationLevel.ERROR, true, false));
+            	log(e.getReport().exportToString(ValidationLevel.ERROR, true, false));
+            }
         }
 
 
@@ -389,12 +401,17 @@ public class Ingestion {
             System.out.println("Processing: " + input);
             originalInputs.add(input);
             input = useOAIPMH ? input : prepareInput(input);
-            processFileOrFolder(input);
+            try {
+            	// Make sure we don't ingest orphaned datasets
+            	checkForDatasetIdMismatch(input);
+            	processFileOrFolder(input);
+            } catch (ValidationException e) {
+            	log.error(e.getReport().exportToString(ValidationLevel.ERROR, true, false));
+            	log(e.getReport().exportToString(ValidationLevel.ERROR, true, false));
+            }
         }
         long end = System.currentTimeMillis() - start;
         System.out.println("\nTime for transformation in sec: " + ((double) end) / 1000);
-
-
     }
 
     /**
@@ -467,58 +484,7 @@ public class Ingestion {
 
             File tmp = new File(input);
             if (xslt != null) {
-                xslLog("===============================");
-                xslLog("Date: " + new Date());
-                xslLog("File: " + input);
-                File f = new File(input);
-                StreamSource xslSource = new StreamSource(xslt);
-                xslSource.setSystemId(xslt);
-
-                StreamSource xmlSource = new StreamSource(f);
-                xmlSource.setSystemId(f);
-
-                try {
-                    tmp = File.createTempFile("TRANS_", ".xml");
-                } catch (IOException e) {
-                    log(e.getMessage());
-                    throw new RuntimeException("An exception occurred: " + e, e);
-                }
-                if (!keepTemp) tmp.deleteOnExit();
-                FileWriter resultXML = null;
-                try {
-                    resultXML = new FileWriter(tmp);
-                } catch (IOException e) {
-                    log(e.getMessage());
-                    throw new RuntimeException("An exception occurred: " + e, e);
-                }
-                TransformerFactory transFact = new net.sf.saxon.TransformerFactoryImpl();
-
-                try {
-                    Transformer trans = transFact.newTransformer(
-                            new StreamSource(xslt));
-                    MessageEmitter emitter = new MessageEmitter();
-                    emitter.setWriter(xslLog);
-                    ((net.sf.saxon.Controller) trans).setMessageEmitter(emitter);
-                    for (String key : xsltProps.stringPropertyNames()) {
-                        ((Controller) trans).setParameter(key, xsltProps.get(key));
-                    }
-                    trans.transform(new StreamSource(f),
-                            new StreamResult(resultXML));
-                } catch (TransformerException e) {
-                    log.error("XSLT: " + xslt);
-                    log.error("File: " + f.toString());
-
-                    log(e.getMessage());
-                    throw new RuntimeException("An exception occurred: " + e, e);
-                }
-                try {
-                    resultXML.flush();
-                    resultXML.close();
-                } catch (IOException e) {
-                    log(e.getMessage());
-                    throw new RuntimeException("An exception occurred: " + e, e);
-
-                }
+                tmp = transformWithXslt(tmp);
             }
 
             //
@@ -559,6 +525,62 @@ public class Ingestion {
         }
     }
 
+	private File transformWithXslt(File sourceFile) {
+		xslLog("===============================");
+		xslLog("Date: " + new Date());
+		xslLog("File: " + sourceFile);
+		StreamSource xslSource = new StreamSource(xslt);
+		xslSource.setSystemId(xslt);
+
+		StreamSource xmlSource = new StreamSource(sourceFile);
+		xmlSource.setSystemId(sourceFile);
+
+		File targetFile;
+		try {
+		    targetFile = File.createTempFile("TRANS_", ".xml");
+		} catch (IOException e) {
+		    log(e.getMessage());
+		    throw new RuntimeException("An exception occurred when creating temp file: " + e, e);
+		}
+		if (!keepTemp) targetFile.deleteOnExit();
+		FileWriter resultXML = null;
+		try {
+		    resultXML = new FileWriter(targetFile);
+		} catch (IOException e) {
+		    log(e.getMessage());
+		    throw new RuntimeException("An exception occurred: " + e, e);
+		}
+		TransformerFactory transFact = new net.sf.saxon.TransformerFactoryImpl();
+
+		try {
+		    Transformer trans = transFact.newTransformer(
+		            new StreamSource(xslt));
+		    MessageEmitter emitter = new MessageEmitter();
+		    emitter.setWriter(xslLog);
+		    ((net.sf.saxon.Controller) trans).setMessageEmitter(emitter);
+		    for (String key : xsltProps.stringPropertyNames()) {
+		        ((Controller) trans).setParameter(key, xsltProps.get(key));
+		    }
+		    trans.transform(new StreamSource(sourceFile),
+		            new StreamResult(resultXML));
+		} catch (TransformerException e) {
+		    log.error("XSLT: " + xslt);
+		    log.error("File: " + sourceFile.toString());
+
+		    log(e.getMessage());
+		    throw new RuntimeException("An exception occurred: " + e, e);
+		}
+		try {
+		    resultXML.flush();
+		    resultXML.close();
+		} catch (IOException e) {
+		    log(e.getMessage());
+		    throw new RuntimeException("An exception occurred: " + e, e);
+
+		}
+		return targetFile;
+	}
+
 	private void postToEndpoint(File tmp) throws FileNotFoundException {
 		FileInputStream fis = new FileInputStream(tmp);
 		Model jenaModel = ModelFactory.createDefaultModel();
@@ -580,8 +602,79 @@ public class Ingestion {
 		exec.execute();
 	}
 
+	/**
+	 * Checks for dataset ID mismatch between configuration and CHOs to avoid orphaned datasets in Pubby.
+	 * @param input
+	 * @throws ValidationException
+	 */
+	private void checkForDatasetIdMismatch(String input) throws ValidationException {
+		String datasetIdOfRandomCHO = null;
+		Dm2eValidationReport report = new Dm2eValidationReport(dm2eModelVersion);
+        if (!useOAIPMH) {
+            File f = new File(input);
+            if (f.isFile()) {
+            	datasetIdOfRandomCHO = findDatasetIdOfRandomChoInFile(input);
+            } else if (f.isDirectory()) {
+            	for (String file : DataTool.getFiles(f.toString())) {
+            		datasetIdOfRandomCHO = findDatasetIdOfRandomChoInFile(file);
+            		break;
+            	}
+            }
+        } else {
+            PMHarvester harvester = new PMHarvester(input);
+            List<String> listOfOaiIdentifiers = include.isEmpty() ? harvester.getIdentifiers() : include;
+            for (String id : listOfOaiIdentifiers) {
+                if (exclude.contains(id)) continue;
+                String target = harvester.getRecord(id);
+                target = DataTool.download(target);
+                datasetIdOfRandomCHO = findDatasetIdOfRandomChoInFile(target);
+                break;
+            }
+        }
+        if (datasetIdOfRandomCHO == null) {
+        	report.add(ValidationLevel.FATAL, ValidationProblemCategory.IRRETRIEVABLE_DATASET_ID, res(input));
+        } else {
+        	if (! datasetIdOfRandomCHO.equals(dataset)) {
+        		report.add(ValidationLevel.FATAL, ValidationProblemCategory.MISMATCH_OF_DATASET_ID, res(input), datasetIdOfRandomCHO, dataset);
+        	} else {
+        		log.debug("Dataset IDs of configuration and CHO match up.");
+        	}
+        }
+        if (report.containsErrors(ValidationLevel.FATAL)) {
+        	throw new ValidationException(report);
+        }
+	}
 
-    /**
+	private Resource res(String input) {
+		return ModelFactory.createDefaultModel().createResource(input);
+	}
+
+    private String findDatasetIdOfRandomChoInFile(String input) {
+    	String foundDataset = null;
+    	File tmp = new File(input);
+    	if (xslt != null) {
+    		tmp = transformWithXslt(tmp);
+    	}
+    	FileInputStream fis;
+		try {
+			fis = new FileInputStream(tmp);
+			Model jenaModel = ModelFactory.createDefaultModel();
+			jenaModel.read(fis, null, rdfSerialization);
+			StmtIterator iter = jenaModel.listStatements(null, jenaModel.createProperty(NS.RDF.PROP_TYPE), jenaModel.createProperty(NS.EDM.CLASS_PROVIDED_CHO));
+			while (iter.hasNext()) {
+				String choUri = iter.next().getSubject().toString();
+				choUri = choUri.replaceFirst("https?://", "");
+				foundDataset = choUri.split("/")[4];
+				break;
+			}
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+    	return foundDataset;
+    }
+
+	/**
      * Finds the root stylesheet in a directory.
      *
      * @param zipdir Directory containing the unzipped xslt files
@@ -641,7 +734,6 @@ public class Ingestion {
         ds.setJobURI(URI.create(activity.getId()));
         ds.setDm2eModelVersion(dm2eModelVersion);
         ds.setValidatedAtLevel(validationLevel == null ? "OFF" : validationLevel.name());
-
 
         List<String> errors = new ArrayList<String>();
         ValidationException validationException = null;
