@@ -595,6 +595,7 @@ public class Ingestion {
 		sb.append("  }  \n");
 		sb.append("}  \n");
 		log.info("Update Query for file '{}' : \n '{}'", tmp, sb.toString());
+		log("Update Query for file " + tmp + ": " + sb.toString());
 		UpdateRequest update = UpdateFactory.create();
 		update.add(sb.toString());
 		log("UPDATE Request: " + update.toString());
